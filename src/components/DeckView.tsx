@@ -25,7 +25,6 @@ export function DeckView({ deckId, deckName, navigate }: Props) {
   const [editBackVal, setEditBackVal] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [dailyLimit, setDailyLimit] = useState(FALLBACK_NEW_CARDS_PER_DAY);
-  const [savedLimit, setSavedLimit] = useState(FALLBACK_NEW_CARDS_PER_DAY);
 
   // Load the saved daily limit (per-deck → global default → hardcoded fallback)
   useEffect(() => {
@@ -33,16 +32,8 @@ export function DeckView({ deckId, deckName, navigate }: Props) {
       const globalDefault = await getSetting<number>('defaultNewCardsPerDay', FALLBACK_NEW_CARDS_PER_DAY);
       const perDeck = await getSetting<number>(`newCardsPerDay:${deckId}`, globalDefault);
       setDailyLimit(perDeck);
-      setSavedLimit(perDeck);
     })();
   }, [deckId]);
-
-  const handleSaveLimit = async () => {
-    const clamped = Math.max(0, Math.min(9999, dailyLimit));
-    await setSetting(`newCardsPerDay:${deckId}`, clamped);
-    setDailyLimit(clamped);
-    setSavedLimit(clamped);
-  };
 
   const handleAdd = async () => {
     if (!front.trim() || !back.trim()) return;
@@ -106,7 +97,7 @@ export function DeckView({ deckId, deckName, navigate }: Props) {
                 onClick={async () => {
                   const val = Math.max(0, dailyLimit - 1);
                   setDailyLimit(val);
-                  setSavedLimit(val);
+
                   await setSetting(`newCardsPerDay:${deckId}`, val);
                 }}
                 className="py-1.5 text-primary hover:bg-primary/10 transition-colors text-sm font-bold text-center rounded-l-full"
@@ -120,7 +111,7 @@ export function DeckView({ deckId, deckName, navigate }: Props) {
                 onChange={async (e) => {
                   const val = Math.max(0, Number(e.target.value) || 0);
                   setDailyLimit(val);
-                  setSavedLimit(val);
+
                   await setSetting(`newCardsPerDay:${deckId}`, val);
                 }}
                 className="w-full text-center text-sm font-medium text-primary bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -129,7 +120,7 @@ export function DeckView({ deckId, deckName, navigate }: Props) {
                 onClick={async () => {
                   const val = dailyLimit + 1;
                   setDailyLimit(val);
-                  setSavedLimit(val);
+
                   await setSetting(`newCardsPerDay:${deckId}`, val);
                 }}
                 className="py-1.5 text-primary hover:bg-primary/10 transition-colors text-sm font-bold text-center rounded-r-full"

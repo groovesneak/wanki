@@ -74,21 +74,25 @@ export function ImportCSV({ onClose, navigate, onDeckCreated }: Props) {
   const handleImport = async () => {
     if (!deckName.trim() || cards.length === 0) return;
     setImporting(true);
+    setError('');
 
-    const deck = {
-      id: crypto.randomUUID(),
-      name: deckName.trim(),
-      createdAt: Date.now(),
-    };
-    await db.addDeck(deck);
+    try {
+      const deck = {
+        id: crypto.randomUUID(),
+        name: deckName.trim(),
+        createdAt: Date.now(),
+      };
+      await db.addDeck(deck);
 
-    for (const card of cards) {
-      const newCard = createNewCard(deck.id, card.front, card.back);
-      await db.addCard(newCard);
+      const newCards = cards.map((c) => createNewCard(deck.id, c.front, c.back));
+      await db.addCardsBatch(newCards);
+
+      onDeckCreated();
+      navigate({ type: 'deck', deckId: deck.id });
+    } catch (err) {
+      setError(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+      setImporting(false);
     }
-
-    onDeckCreated();
-    navigate({ type: 'deck', deckId: deck.id });
   };
 
   const columnOptions = Array.from({ length: columnCount }, (_, i) => i);

@@ -209,9 +209,8 @@ export function Dashboard({ navigate }: Props) {
 
       {decks.length === 0 ? (
         <div className="text-center py-20">
-          <div className="text-5xl mb-4">📚</div>
           <h2 className="text-xl font-semibold mb-2">No decks yet</h2>
-          <p className="text-text-muted">Create your first deck to start learning</p>
+          <p className="text-text-muted">Create one to have your first Wanki</p>
         </div>
       ) : (
         <div className="space-y-3">

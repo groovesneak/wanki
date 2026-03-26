@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Card, Rating, View } from '../types';
 import { useCards } from '../hooks/useCards';
 import { previewIntervals, reviewCard } from '../srs';
@@ -238,7 +238,6 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
     setGradeResult(isCorrect ? 'correct' : 'incorrect');
     setFlipped(true);
     // Set default custom days from the Easy preview
-    const intervals = previewIntervals(currentCard);
     const easyMs = reviewCard(currentCard, 'easy').dueDate - Date.now();
     const days = Math.max(1, Math.round(easyMs / (24 * 60 * 60 * 1000)));
     setCustomDays(days);

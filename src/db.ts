@@ -79,6 +79,15 @@ export async function addCard(card: Card): Promise<void> {
   await db.put('cards', card);
 }
 
+export async function addCardsBatch(cards: Card[]): Promise<void> {
+  const db = await getDb();
+  const tx = db.transaction('cards', 'readwrite');
+  for (const card of cards) {
+    tx.store.put(card);
+  }
+  await tx.done;
+}
+
 export async function updateCard(card: Card): Promise<void> {
   const db = await getDb();
   await db.put('cards', card);
@@ -181,9 +190,9 @@ export async function recordReviewAndCheckStreak(): Promise<number> {
     totalDue += due.length;
   }
 
-  // Streak counts if: goal met OR all available cards completed (none left due)
+  // Streak counts if: goal met OR all available cards completed (none left due, but must have reviewed at least 1)
   const goalMet = newReviewCount >= dailyGoal;
-  const allCompleted = totalDue === 0;
+  const allCompleted = totalDue === 0 && newReviewCount > 0;
 
   if (!goalMet && !allCompleted) {
     return streak.count;
