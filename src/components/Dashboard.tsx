@@ -210,7 +210,7 @@ export function Dashboard({ navigate }: Props) {
       {decks.length === 0 ? (
         <div className="text-center py-20">
           <h2 className="text-xl font-semibold mb-2">No decks yet</h2>
-          <p className="text-text-muted">Create one to have your first Wanki</p>
+          <p className="text-text-muted">Create one and have your first Wanki</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -241,6 +241,18 @@ function DeckCard({
   onDelete: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
+  const [hardMode, setHardMode] = useState(false);
+
+  useEffect(() => {
+    getSetting<boolean>(`hardMode:${deck.id}`, false).then(setHardMode);
+  }, [deck.id]);
+
+  const toggleHardMode = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newVal = !hardMode;
+    setHardMode(newVal);
+    await setSetting(`hardMode:${deck.id}`, newVal);
+  };
 
   return (
     <div className="bg-surface-light rounded-2xl p-5 hover:bg-surface-card/60 transition-colors group shadow-sm">
@@ -250,6 +262,16 @@ function DeckCard({
           <DeckStats deckId={deck.id} />
         </button>
         <div className="flex items-center gap-2 ml-4">
+          <div className="flex flex-col items-center gap-0.5" title="Hard Mode: exact match including capitals, spaces & punctuation">
+            <span className={`text-[10px] font-semibold leading-none ${hardMode ? 'text-primary' : 'text-text-muted'}`}>Hard</span>
+            <button
+              onClick={toggleHardMode}
+              className={`relative w-10 h-5 rounded-full transition-colors ${hardMode ? 'bg-primary' : 'bg-surface-card'}`}
+            >
+              <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${hardMode ? 'translate-x-5' : 'translate-x-0.5'}`} />
+            </button>
+            <span className={`text-[10px] font-semibold leading-none ${hardMode ? 'text-primary' : 'text-text-muted'}`}>Mode</span>
+          </div>
           <button
             onClick={onStudy}
             className="bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-full text-sm font-medium transition-colors shadow-sm"
@@ -257,16 +279,17 @@ function DeckCard({
             Study
           </button>
           {confirming ? (
-            <div className="flex gap-1">
+            <div className="relative flex items-center gap-1">
+              <span className="absolute -top-4 left-0 right-0 text-center text-xs font-medium text-primary">Delete?</span>
               <button
                 onClick={onDelete}
-                className="bg-danger/20 hover:bg-danger/30 text-danger px-3 py-2 rounded-lg text-sm transition-colors"
+                className="bg-surface-light border border-primary text-primary px-3 py-2 rounded-full text-xs font-medium transition-colors shadow-sm hover:bg-primary hover:text-white"
               >
-                Confirm
+                Yes
               </button>
               <button
                 onClick={() => setConfirming(false)}
-                className="text-text-muted hover:text-text px-2 py-2 text-sm transition-colors"
+                className="bg-surface-light border border-primary text-primary px-3 py-2 rounded-full text-xs font-medium transition-colors shadow-sm hover:bg-primary hover:text-white"
               >
                 No
               </button>

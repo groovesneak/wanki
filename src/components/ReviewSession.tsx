@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Card, Rating, View } from '../types';
 import { useCards } from '../hooks/useCards';
 import { previewIntervals, reviewCard } from '../srs';
+import { getSetting, setSetting } from '../db';
 
 interface Props {
   deckId: string;
@@ -9,13 +10,14 @@ interface Props {
   navigate: (view: View) => void;
 }
 
-/** Strip everything except letters and digits, then lowercase */
-function normalize(s: string): string {
+/** Strip everything except letters and digits, then lowercase (easy mode) or keep as-is (hard mode) */
+function normalize(s: string, hardMode = false): string {
+  if (hardMode) return s;
   return s.toLowerCase().replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '');
 }
 
-function checkAnswer(typed: string, correct: string): boolean {
-  return normalize(typed) === normalize(correct);
+function checkAnswer(typed: string, correct: string, hardMode = false): boolean {
+  return normalize(typed, hardMode) === normalize(correct, hardMode);
 }
 
 // ── Grading tiers ───────────────────────────────────────────────────
@@ -37,22 +39,22 @@ function editDistance(a: string, b: string): number {
   return dp[m][n];
 }
 
-function getGradeTier(typed: string, correct: string): GradeTier {
-  const nt = normalize(typed);
-  const nc = normalize(correct);
+function getGradeTier(typed: string, correct: string, hardMode = false): GradeTier {
+  const nt = normalize(typed, hardMode);
+  const nc = normalize(correct, hardMode);
   if (nt === nc) return { label: 'Correct!', bg: 'bg-success', text: 'text-white' };
   const dist = editDistance(nt, nc);
   const maxLen = Math.max(nt.length, nc.length, 1);
   const pct = Math.round(((maxLen - dist) / maxLen) * 100);
-  if (pct >= 95) return { label: 'Almost!', bg: 'bg-surface-light border border-success', text: 'text-success' };
-  if (pct >= 90) return { label: 'Close!', bg: 'bg-surface-light border border-success', text: 'text-success' };
-  if (pct >= 80) return { label: 'Not bad', bg: 'bg-surface-light border border-success', text: 'text-success' };
+  if (pct >= 90) return { label: 'Almost!', bg: 'bg-surface-light border border-primary', text: 'text-primary' };
+  if (pct >= 80) return { label: 'Close!', bg: 'bg-surface-light border border-primary', text: 'text-primary' };
+  if (pct >= 70) return { label: 'Not bad', bg: 'bg-surface-light border border-primary', text: 'text-primary' };
   return { label: 'Incorrect', bg: 'bg-primary', text: 'text-white' };
 }
 
 // ── Dual diff: colours for typed string AND error flags for correct string ──
 
-type CharColor = 'correct' | 'incorrect';
+type CharColor = 'correct' | 'incorrect' | 'missing';
 
 interface DiffResult {
   typedChars: { char: string; color: CharColor }[];
@@ -60,9 +62,9 @@ interface DiffResult {
   correctErrors: boolean[];
 }
 
-function dualDiff(typed: string, correct: string): DiffResult {
-  const nt = normalize(typed);
-  const nc = normalize(correct);
+function dualDiff(typed: string, correct: string, hardMode = false): DiffResult {
+  const nt = normalize(typed, hardMode);
+  const nc = normalize(correct, hardMode);
   const m = nt.length;
   const n = nc.length;
 
@@ -80,44 +82,77 @@ function dualDiff(typed: string, correct: string): DiffResult {
     }
   }
 
-  // Backtrace → colour each normalised char in both strings
+  // Backtrace → build aligned sequence with colors and missing char placeholders
   const typedNormColors: CharColor[] = Array(m).fill('incorrect');
   const correctNormErrors: boolean[] = Array(n).fill(false);
+  // Track where missing chars should be inserted (keyed by typed norm index)
+  // missingAfter[i] = chars missing after typed norm index i (-1 = before start)
+  const missingAfter = new Map<number, string[]>();
 
   let i = m, j = n;
   while (i > 0 && j > 0) {
     if (nt[i - 1] === nc[j - 1]) {
       typedNormColors[i - 1] = 'correct';
-      // correctNormErrors[j-1] stays false (matched)
       i--; j--;
     } else if (dp[i - 1][j - 1] <= dp[i - 1][j] && dp[i - 1][j - 1] <= dp[i][j - 1]) {
-      // Substitution: both chars are wrong
       typedNormColors[i - 1] = 'incorrect';
       correctNormErrors[j - 1] = true;
       i--; j--;
     } else if (dp[i - 1][j] <= dp[i][j - 1]) {
-      // Deletion: extra char in typed
       typedNormColors[i - 1] = 'incorrect';
       i--;
     } else {
-      // Insertion: missing char in typed → mark correct char as error
+      // Missing char in typed — record it to insert as "-" placeholder
       correctNormErrors[j - 1] = true;
+      const insertPos = i - 1; // insert after this typed norm index (-1 if at start)
+      if (!missingAfter.has(insertPos)) missingAfter.set(insertPos, []);
+      missingAfter.get(insertPos)!.unshift(nc[j - 1]);
       j--;
     }
   }
   while (i > 0) { typedNormColors[--i] = 'incorrect'; }
-  while (j > 0) { correctNormErrors[--j] = true; }
+  while (j > 0) {
+    correctNormErrors[j - 1] = true;
+    const insertPos = -1;
+    if (!missingAfter.has(insertPos)) missingAfter.set(insertPos, []);
+    missingAfter.get(insertPos)!.unshift(nc[j - 1]);
+    j--;
+  }
 
-  // Map typed colours back to original typed string
+  // Map typed colours back to original typed string, inserting "-" for missing chars
   const typedChars: { char: string; color: CharColor }[] = [];
-  let ni = 0;
-  for (const ch of typed) {
-    const isAlpha = ch.toLowerCase().replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '') !== '';
-    if (!isAlpha) {
-      typedChars.push({ char: ch, color: 'correct' });
-    } else {
-      typedChars.push({ char: ch, color: typedNormColors[ni] });
-      ni++;
+
+  // Insert any missing chars before the first character
+  if (missingAfter.has(-1)) {
+    for (const _ of missingAfter.get(-1)!) {
+      typedChars.push({ char: '-', color: 'missing' as CharColor });
+    }
+  }
+
+  if (hardMode) {
+    for (let idx = 0; idx < typed.length; idx++) {
+      typedChars.push({ char: typed[idx], color: typedNormColors[idx] || 'incorrect' });
+      if (missingAfter.has(idx)) {
+        for (const _ of missingAfter.get(idx)!) {
+          typedChars.push({ char: '-', color: 'missing' as CharColor });
+        }
+      }
+    }
+  } else {
+    let ni = 0;
+    for (const ch of typed) {
+      const isAlpha = ch.toLowerCase().replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '') !== '';
+      if (!isAlpha) {
+        typedChars.push({ char: ch, color: 'correct' });
+      } else {
+        typedChars.push({ char: ch, color: typedNormColors[ni] });
+        if (missingAfter.has(ni)) {
+          for (const _ of missingAfter.get(ni)!) {
+            typedChars.push({ char: '-', color: 'missing' as CharColor });
+          }
+        }
+        ni++;
+      }
     }
   }
 
@@ -131,13 +166,19 @@ function dualDiff(typed: string, correct: string): DiffResult {
 function highlightCorrectAnswer(
   correct: string,
   normErrors: boolean[],
+  hardMode = false,
 ): { char: string; highlight: boolean }[] {
   // First, map each original char to its normalised index (or -1 for non-alpha)
   const charToNormIdx: number[] = [];
-  let ni = 0;
-  for (const ch of correct) {
-    const isAlpha = ch.toLowerCase().replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '') !== '';
-    charToNormIdx.push(isAlpha ? ni++ : -1);
+  if (hardMode) {
+    // In hard mode every char is significant — 1:1 mapping
+    for (let i = 0; i < correct.length; i++) charToNormIdx.push(i);
+  } else {
+    let ni = 0;
+    for (const ch of correct) {
+      const isAlpha = ch.toLowerCase().replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '') !== '';
+      charToNormIdx.push(isAlpha ? ni++ : -1);
+    }
   }
 
   // Split into words (sequences of chars separated by spaces)
@@ -183,9 +224,9 @@ function groupHighlighted(
 
 // ── Recommended rating based on accuracy ────────────────────────────
 
-function getRecommendedRating(typed: string, correct: string): Rating {
-  const nt = normalize(typed);
-  const nc = normalize(correct);
+function getRecommendedRating(typed: string, correct: string, hardMode = false): Rating {
+  const nt = normalize(typed, hardMode);
+  const nc = normalize(correct, hardMode);
   if (nt === nc) return 'good';
   const dist = editDistance(nt, nc);
   const maxLen = Math.max(nt.length, nc.length, 1);
@@ -217,6 +258,19 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
   // Delete confirm state
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // Hard mode
+  const [hardMode, setHardMode] = useState(false);
+
+  useEffect(() => {
+    getSetting<boolean>(`hardMode:${deckId}`, false).then(setHardMode);
+  }, [deckId]);
+
+  const toggleHardMode = async () => {
+    const newVal = !hardMode;
+    setHardMode(newVal);
+    await setSetting(`hardMode:${deckId}`, newVal);
+  };
+
   // Custom days for the "Custom" button
   const [customDays, setCustomDays] = useState<number>(4);
 
@@ -234,7 +288,7 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
 
   const handleReveal = useCallback(() => {
     if (flipped) return;
-    const isCorrect = checkAnswer(answer, currentCard.back);
+    const isCorrect = checkAnswer(answer, currentCard.back, hardMode);
     setGradeResult(isCorrect ? 'correct' : 'incorrect');
     setFlipped(true);
     // Set default custom days from the Easy preview
@@ -314,9 +368,14 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
       }
 
       if (flipped && !(e.target instanceof HTMLInputElement)) {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          handleReflip();
+          return;
+        }
         if (e.key === 'Enter') {
           e.preventDefault();
-          const rec = getRecommendedRating(answer, currentCard.back);
+          const rec = getRecommendedRating(answer, currentCard.back, hardMode);
           handleRate(rec);
           return;
         }
@@ -394,9 +453,21 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
           {deckName}
         </button>
-        <span className="text-sm text-text-muted">
-          {currentIndex + 1} / {totalCards}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-text-muted">
+            {currentIndex + 1} / {totalCards}
+          </span>
+          <div className="flex flex-col items-center gap-0.5" title="Hard Mode: exact match including capitals, spaces & punctuation">
+            <span className={`text-[10px] font-semibold leading-none ${hardMode ? 'text-primary' : 'text-text-muted'}`}>Hard</span>
+            <button
+              onClick={toggleHardMode}
+              className={`relative w-10 h-5 rounded-full transition-colors ${hardMode ? 'bg-primary' : 'bg-surface-card'}`}
+            >
+              <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${hardMode ? 'translate-x-5' : 'translate-x-0.5'}`} />
+            </button>
+            <span className={`text-[10px] font-semibold leading-none ${hardMode ? 'text-primary' : 'text-text-muted'}`}>Mode</span>
+          </div>
+        </div>
       </div>
 
       {/* Progress bar */}
@@ -454,10 +525,10 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
               {/* Back */}
               <div className="card-face card-back bg-surface-light rounded-2xl p-8 min-h-[200px] flex flex-col items-center justify-center absolute inset-0 w-full overflow-visible shadow-md">
                 {gradeResult && (() => {
-                  const tier = getGradeTier(answer, currentCard.back);
+                  const tier = getGradeTier(answer, currentCard.back, hardMode);
                   const isExact = gradeResult === 'correct';
-                  const diff = !isExact ? dualDiff(answer, currentCard.back) : null;
-                  const highlighted = diff ? highlightCorrectAnswer(currentCard.back, diff.correctErrors) : null;
+                  const diff = !isExact ? dualDiff(answer, currentCard.back, hardMode) : null;
+                  const highlighted = diff ? highlightCorrectAnswer(currentCard.back, diff.correctErrors, hardMode) : null;
 
                   return (
                     <>
@@ -481,16 +552,39 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
                         <p className="text-xl text-center leading-relaxed whitespace-pre-wrap">{currentCard.back}</p>
                       )}
 
-                      {/* Coloured diff of typed answer */}
-                      {diff && (
-                        <p className="mt-4 text-xl text-center leading-relaxed whitespace-pre-wrap">
-                          {diff.typedChars.map((c, i) => (
-                            <span key={i} className={c.color === 'correct' ? 'text-success' : 'text-primary'}>
-                              {c.char}
-                            </span>
-                          ))}
+                      {/* Typed answer — all green if correct */}
+                      {isExact && (
+                        <p className="mt-4 text-xl text-center leading-relaxed whitespace-pre-wrap text-success">
+                          {answer}
                         </p>
                       )}
+
+                      {/* Coloured diff of typed answer */}
+                      {diff && (() => {
+                        // Group consecutive chars by color
+                        const groups: { text: string; color: CharColor }[] = [];
+                        for (const c of diff.typedChars) {
+                          const last = groups[groups.length - 1];
+                          if (last && last.color === c.color) {
+                            last.text += c.char;
+                          } else {
+                            groups.push({ text: c.char, color: c.color });
+                          }
+                        }
+                        return (
+                          <p className="mt-4 text-xl text-center leading-relaxed whitespace-pre-wrap">
+                            {groups.map((g, i) => (
+                              <span key={i} className={
+                                g.color === 'correct' ? 'text-success'
+                                : g.color === 'missing' ? 'bg-primary text-white rounded px-1 py-0.5 mx-[1px]'
+                                : 'bg-primary text-white rounded px-1 py-0.5 mx-[1px]'
+                              }>
+                                {g.text}
+                              </span>
+                            ))}
+                          </p>
+                        );
+                      })()}
 
                       <div className={`${isExact ? 'mt-4' : 'mt-3'} px-6 py-3 rounded-full text-xl font-bold ${tier.bg} ${tier.text}`}>
                         {tier.label}
@@ -577,7 +671,7 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
       {/* Rating buttons */}
       {flipped && !editing && (() => {
         const intervals = previewIntervals(currentCard);
-        const recommended = getRecommendedRating(answer, currentCard.back);
+        const recommended = getRecommendedRating(answer, currentCard.back, hardMode);
         return (
           <div className="mt-8 mb-4">
             <p className="text-center text-text-muted text-sm mb-3">How well did you know this?</p>

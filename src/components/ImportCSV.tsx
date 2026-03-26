@@ -146,9 +146,9 @@ export function ImportCSV({ onClose, navigate, onDeckCreated }: Props) {
       {rows.length > 0 && (
         <>
           <div className="space-y-3">
+            <h3 className="text-2xl font-extrabold tracking-tight text-primary">Deck Name:</h3>
             <input
               type="text"
-              placeholder="Deck name..."
               value={deckName}
               onChange={(e) => setDeckName(e.target.value)}
               className="w-full bg-surface-card rounded-lg px-4 py-2 text-text outline-none focus:ring-2 focus:ring-primary/50"

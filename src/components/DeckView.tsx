@@ -25,6 +25,8 @@ export function DeckView({ deckId, deckName, navigate }: Props) {
   const [editBackVal, setEditBackVal] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [dailyLimit, setDailyLimit] = useState(FALLBACK_NEW_CARDS_PER_DAY);
+  const [sortAlpha, setSortAlpha] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Load the saved daily limit (per-deck → global default → hardcoded fallback)
   useEffect(() => {
@@ -203,8 +205,39 @@ export function DeckView({ deckId, deckName, navigate }: Props) {
           <p className="text-text-muted">Add your first card to start learning</p>
         </div>
       ) : (
+        <>
+        {/* Search and sort toolbar */}
+        <div className="flex items-center gap-2 mb-3">
+          <div className="flex-1 relative">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input
+              type="text"
+              placeholder="Search cards..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-surface-light rounded-full pl-9 pr-4 py-2 text-sm text-text outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-text-muted/50 shadow-sm"
+            />
+          </div>
+          <button
+            onClick={() => setSortAlpha((s) => !s)}
+            className={`px-3 py-2 rounded-full text-sm font-medium transition-colors shadow-sm ${sortAlpha ? 'bg-primary text-white' : 'bg-surface-light border border-primary text-primary hover:bg-primary/10'}`}
+            title="Sort alphabetically"
+          >
+            A→Z
+          </button>
+        </div>
         <div className="space-y-2">
-          {cards.map((card) => (
+          {(() => {
+            let filtered = cards;
+            if (searchQuery.trim()) {
+              const q = searchQuery.toLowerCase();
+              filtered = filtered.filter((c) => c.front.toLowerCase().includes(q) || c.back.toLowerCase().includes(q));
+            }
+            if (sortAlpha) {
+              filtered = [...filtered].sort((a, b) => a.front.localeCompare(b.front));
+            }
+            return filtered;
+          })().map((card) => (
             <CardRow
               key={card.id}
               card={card}
@@ -236,6 +269,7 @@ export function DeckView({ deckId, deckName, navigate }: Props) {
             />
           ))}
         </div>
+        </>
       )}
     </div>
   );
