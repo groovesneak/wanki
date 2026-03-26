@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+@theme {
+  --color-surface: #f2f2f7;
+  --color-surface-light: #ffffff;
+  --color-surface-card: #e8e8ed;
+  --color-primary: #ff6b4a;
+  --color-primary-hover: #e85a3a;
+  --color-accent: #ff8a6a;
+  --color-text: #1c1c1e;
+  --color-text-muted: #8e8e93;
+  --color-success: #34c759;
+  --color-warning: #ff9f0a;
+  --color-danger: #ff453a;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.card-flip {
+  perspective: 1000px;
+}
+
+.card-flip-inner {
+  transition: transform 0.5s;
+  transform-style: preserve-3d;
+  position: relative;
+}
+
+.card-flip-inner.flipped {
+  transform: rotateY(180deg);
+}
+
+.card-face {
+  backface-visibility: hidden;
+}
+
+.card-face.card-back {
+  transform: rotateY(180deg);
+}
+
+/* When flipped, the front is hidden and the back flows naturally */
+.card-flip-inner.flipped .card-face:not(.card-back) {
+  visibility: hidden;
+  height: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.card-flip-inner.flipped .card-back {
+  position: relative;
+  inset: auto;
+}
