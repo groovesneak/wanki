@@ -182,17 +182,21 @@ export async function recordReviewAndCheckStreak(): Promise<number> {
   const dailyGoal = await getSetting<number>('dailyGoal', 10);
   const newReviewCount = reviewedToday + 1;
 
-  // Count total due cards across all decks
+  // Count total due cards and total cards across all decks
   const allDecks = await getAllDecks();
   let totalDue = 0;
+  let totalCards = 0;
   for (const deck of allDecks) {
     const due = await getDueCards(deck.id);
+    const cards = await getCardsByDeck(deck.id);
     totalDue += due.length;
+    totalCards += cards.length;
   }
 
-  // Streak counts if: goal met OR all available cards completed (none left due, but must have reviewed at least 1)
+  // "All completed" = no cards due AND reviewed at least as many as existed
+  // (prevents false trigger when cards are briefly not-yet-due after rating Again)
   const goalMet = newReviewCount >= dailyGoal;
-  const allCompleted = totalDue === 0 && newReviewCount > 0;
+  const allCompleted = totalDue === 0 && totalCards > 0 && newReviewCount >= Math.min(dailyGoal, totalCards);
 
   if (!goalMet && !allCompleted) {
     return streak.count;
