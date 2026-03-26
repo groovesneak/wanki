@@ -222,6 +222,17 @@ function groupHighlighted(
   return groups;
 }
 
+// ── Accuracy percentage ──────────────────────────────────────────────
+
+function getAccuracyPercent(typed: string, correct: string, hardMode = false): number {
+  const nt = normalize(typed, hardMode);
+  const nc = normalize(correct, hardMode);
+  if (nt === nc) return 100;
+  const dist = editDistance(nt, nc);
+  const maxLen = Math.max(nt.length, nc.length, 1);
+  return Math.max(0, Math.round(((maxLen - dist) / maxLen) * 100));
+}
+
 // ── Recommended rating based on accuracy ────────────────────────────
 
 function getRecommendedRating(typed: string, correct: string, hardMode = false): Rating {
@@ -260,15 +271,29 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
 
   // Hard mode
   const [hardMode, setHardMode] = useState(false);
+  // Settings panel & percentage toggle
+  const [showStudySettings, setShowStudySettings] = useState(false);
+  const [showPercentage, setShowPercentage] = useState(true);
+  // Completed count (cards scheduled for tomorrow+)
+  const [completed, setCompleted] = useState(0);
+  // Initial session size (constant)
+  const [sessionTotal, setSessionTotal] = useState(0);
 
   useEffect(() => {
     getSetting<boolean>(`hardMode:${deckId}`, false).then(setHardMode);
+    getSetting<boolean>('showPercentage', true).then(setShowPercentage);
   }, [deckId]);
 
   const toggleHardMode = async () => {
     const newVal = !hardMode;
     setHardMode(newVal);
     await setSetting(`hardMode:${deckId}`, newVal);
+  };
+
+  const togglePercentage = async () => {
+    const newVal = !showPercentage;
+    setShowPercentage(newVal);
+    await setSetting('showPercentage', newVal);
   };
 
   // Custom days for the "Custom" button
@@ -278,6 +303,7 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
   useEffect(() => {
     if (!loading && !initialized) {
       setQueue([...dueCards]);
+      setSessionTotal(dueCards.length);
       setInitialized(true);
     }
   }, [loading, dueCards, initialized]);
@@ -311,6 +337,12 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
 
     if (rating === 'again') {
       setQueue((q) => [...q, updated]);
+    }
+
+    // Check if card is "completed" (scheduled for tomorrow or later)
+    const DAY = 24 * 60 * 60 * 1000;
+    if (updated.dueDate - Date.now() >= DAY * 0.5) {
+      setCompleted((c) => c + 1);
     }
 
     setReviewed((r) => r + 1);
@@ -454,21 +486,47 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
           {deckName}
         </button>
         <div className="flex items-center gap-3">
-          <span className="text-sm text-text-muted">
-            {currentIndex + 1} / {totalCards}
+          <span className="text-sm">
+            <span className={`font-bold ${completed > 0 ? 'text-success' : 'text-text-muted'}`}>{completed}</span>
+            <span className="text-text-muted">/{sessionTotal}</span>
           </span>
-          <div className="flex flex-col items-center gap-0.5" title="Hard Mode: exact match including capitals, spaces & punctuation">
-            <span className={`text-[10px] font-semibold leading-none ${hardMode ? 'text-primary' : 'text-text-muted'}`}>Hard</span>
-            <button
-              onClick={toggleHardMode}
-              className={`relative w-10 h-5 rounded-full transition-colors ${hardMode ? 'bg-primary' : 'bg-surface-card'}`}
-            >
-              <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${hardMode ? 'translate-x-5' : 'translate-x-0.5'}`} />
-            </button>
-            <span className={`text-[10px] font-semibold leading-none ${hardMode ? 'text-primary' : 'text-text-muted'}`}>Mode</span>
-          </div>
+          <button
+            onClick={() => setShowStudySettings((s) => !s)}
+            className="text-text-muted hover:text-text p-1 transition-colors"
+            title="Study settings"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
         </div>
       </div>
+
+      {/* Study settings dropdown */}
+      {showStudySettings && (
+        <div className="bg-surface-light rounded-2xl p-4 mb-4 shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Hard Mode</span>
+            <div className="flex flex-col items-center gap-0.5">
+              <button
+                onClick={toggleHardMode}
+                className={`relative w-10 h-5 rounded-full transition-colors ${hardMode ? 'bg-primary' : 'bg-surface-card'}`}
+              >
+                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${hardMode ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              </button>
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Percentage</span>
+            <div className="flex flex-col items-center gap-0.5">
+              <button
+                onClick={togglePercentage}
+                className={`relative w-10 h-5 rounded-full transition-colors ${showPercentage ? 'bg-primary' : 'bg-surface-card'}`}
+              >
+                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${showPercentage ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Progress bar */}
       <div className="w-full h-1.5 bg-surface-card rounded-full mb-8 overflow-hidden">
@@ -640,6 +698,24 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
             </div>
           </div>
         )}
+
+        {/* Accuracy bar */}
+        {flipped && !editing && showPercentage && (() => {
+          const pct = getAccuracyPercent(answer, currentCard.back, hardMode);
+          const barColor = pct === 100 ? 'bg-success' : pct >= 70 ? 'bg-white border-2 border-primary' : 'bg-primary';
+          const textColor = pct === 100 ? 'text-success' : 'text-primary';
+          return (
+            <div className="w-full max-w-lg flex items-center gap-3">
+              <div className="flex-1 h-4 bg-surface-card rounded-full overflow-hidden shadow-inner">
+                <div
+                  className={`h-full ${barColor} rounded-full transition-all duration-500`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <span className={`text-sm font-bold ${textColor} min-w-[3ch] text-right`}>{pct}%</span>
+            </div>
+          );
+        })()}
 
         {/* Answer input */}
         {!flipped && !editing && (

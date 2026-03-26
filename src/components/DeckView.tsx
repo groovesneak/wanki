@@ -137,18 +137,19 @@ export function DeckView({ deckId, deckName, navigate }: Props) {
               <p className="text-sm text-text-muted">Reset all cards to unseen - all progress will be cleared</p>
             </div>
             {confirmResetAll ? (
-              <div className="flex gap-2">
+              <div className="relative flex items-center gap-1">
+                <span className="absolute -top-4 left-0 right-0 text-center text-xs font-medium text-primary">Reset Deck?</span>
                 <button
                   onClick={async () => { await resetAllCards(); setConfirmResetAll(false); }}
-                  className="text-danger text-sm px-3 py-2 rounded-lg bg-danger/20 hover:bg-danger/30 font-medium transition-colors"
+                  className="bg-surface-light border border-primary text-primary px-3 py-2 rounded-full text-xs font-medium transition-colors shadow-sm hover:bg-primary hover:text-white"
                 >
-                  Confirm reset
+                  Yes
                 </button>
                 <button
                   onClick={() => setConfirmResetAll(false)}
-                  className="text-text-muted text-sm px-3 py-2 transition-colors"
+                  className="bg-surface-light border border-primary text-primary px-3 py-2 rounded-full text-xs font-medium transition-colors shadow-sm hover:bg-primary hover:text-white"
                 >
-                  Cancel
+                  No
                 </button>
               </div>
             ) : (
