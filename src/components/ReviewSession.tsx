@@ -454,7 +454,6 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
   if (done) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6">
-        <div className="text-5xl mb-4">🏆</div>
         <h2 className="text-2xl font-bold mb-2">Session complete!</h2>
         <p className="text-text-muted mb-6">You reviewed {reviewed} card{reviewed !== 1 ? 's' : ''}</p>
         <div className="flex gap-3">
