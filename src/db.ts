@@ -2,7 +2,7 @@ import { openDB, type IDBPDatabase } from 'idb';
 import type { Deck, Card } from './types';
 
 const DB_NAME = 'flashcards';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbPromise: Promise<IDBPDatabase>;
 
@@ -26,6 +26,15 @@ function getDb() {
           if (!db.objectStoreNames.contains('newCardLog')) {
             const logStore = db.createObjectStore('newCardLog', { keyPath: 'id', autoIncrement: true });
             logStore.createIndex('deckDate', ['deckId', 'date']);
+          }
+        }
+        // v3: difficult words tracker
+        if (oldVersion < 3) {
+          if (!db.objectStoreNames.contains('difficultWords')) {
+            const dwStore = db.createObjectStore('difficultWords', { keyPath: 'id', autoIncrement: true });
+            dwStore.createIndex('word', 'word');
+            dwStore.createIndex('deckId', 'deckId');
+            dwStore.createIndex('wordDeck', ['word', 'deckId']);
           }
         }
       },
@@ -230,6 +239,88 @@ export async function clearNewCardLog(cardId: string): Promise<void> {
       await cursor.delete();
     }
     cursor = await cursor.continue();
+  }
+  await tx.done;
+}
+
+// ── Difficult words tracker ──────────────────────────────────────────
+
+export interface DifficultWord {
+  id?: number;
+  word: string;         // the correct word
+  typed: string;        // what the user typed
+  cardId: string;
+  deckId: string;
+  cardFront: string;
+  cardBack: string;
+  timestamp: number;
+}
+
+export interface DifficultWordSummary {
+  word: string;
+  deckId: string;
+  count: number;
+  lastSeen: number;
+  examples: { typed: string; cardFront: string; cardBack: string }[];
+}
+
+/** Log a missed word */
+export async function logDifficultWord(entry: Omit<DifficultWord, 'id'>): Promise<void> {
+  const db = await getDb();
+  await db.add('difficultWords', entry);
+}
+
+/** Log multiple missed words at once */
+export async function logDifficultWords(entries: Omit<DifficultWord, 'id'>[]): Promise<void> {
+  const db = await getDb();
+  const tx = db.transaction('difficultWords', 'readwrite');
+  for (const entry of entries) {
+    tx.store.add(entry);
+  }
+  await tx.done;
+}
+
+/** Get all difficult words for a deck, summarized by word */
+export async function getDifficultWords(deckId?: string): Promise<DifficultWordSummary[]> {
+  const db = await getDb();
+  const all: DifficultWord[] = deckId
+    ? await db.getAllFromIndex('difficultWords', 'deckId', deckId)
+    : await db.getAll('difficultWords');
+
+  // Group by word + deckId
+  const map = new Map<string, DifficultWordSummary>();
+  for (const entry of all) {
+    const key = `${entry.word}::${entry.deckId}`;
+    const existing = map.get(key);
+    if (existing) {
+      existing.count++;
+      if (entry.timestamp > existing.lastSeen) existing.lastSeen = entry.timestamp;
+      if (existing.examples.length < 3) {
+        existing.examples.push({ typed: entry.typed, cardFront: entry.cardFront, cardBack: entry.cardBack });
+      }
+    } else {
+      map.set(key, {
+        word: entry.word,
+        deckId: entry.deckId,
+        count: 1,
+        lastSeen: entry.timestamp,
+        examples: [{ typed: entry.typed, cardFront: entry.cardFront, cardBack: entry.cardBack }],
+      });
+    }
+  }
+
+  // Sort by count (most missed first)
+  return Array.from(map.values()).sort((a, b) => b.count - a.count);
+}
+
+/** Clear all difficult word entries for a deck */
+export async function clearDifficultWords(deckId: string): Promise<void> {
+  const db = await getDb();
+  const tx = db.transaction('difficultWords', 'readwrite');
+  const store = tx.objectStore('difficultWords');
+  const all = await store.index('deckId').getAllKeys(deckId);
+  for (const key of all) {
+    await store.delete(key);
   }
   await tx.done;
 }

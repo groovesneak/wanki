@@ -23,4 +23,5 @@ export type View =
   | { type: 'dashboard' }
   | { type: 'deck'; deckId: string }
   | { type: 'review'; deckId: string }
-  | { type: 'editCard'; deckId: string; cardId?: string };
+  | { type: 'editCard'; deckId: string; cardId?: string }
+  | { type: 'difficultWords' };

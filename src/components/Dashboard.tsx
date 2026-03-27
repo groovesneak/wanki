@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Deck, View } from '../types';
 import { useDecks } from '../hooks/useDecks';
 import { DeckStats } from './DeckStats';
 import { ImportCSV } from './ImportCSV';
-import { getStreak, getSetting, setSetting, type StreakData } from '../db';
+import { getStreak, getSetting, setSetting, getDifficultWords, addDeck, addCardsBatch, type StreakData } from '../db';
+import { parseApkg } from '../apkg';
+import { createNewCard } from '../srs';
 
 interface Props {
   navigate: (view: View) => void;
@@ -19,12 +21,17 @@ export function Dashboard({ navigate }: Props) {
   const [newDayHour, setNewDayHour] = useState(6);
   const [dailyGoal, setDailyGoal] = useState(10);
   const [defaultCardLimit, setDefaultCardLimit] = useState(30);
+  const [difficultWordCount, setDifficultWordCount] = useState(0);
+  const [apkgImporting, setApkgImporting] = useState(false);
+  const [apkgError, setApkgError] = useState('');
+  const apkgInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     getStreak().then(setStreak);
     getSetting<number>('newDayStartHour', 6).then(setNewDayHour);
     getSetting<number>('dailyGoal', 10).then(setDailyGoal);
     getSetting<number>('defaultNewCardsPerDay', 30).then(setDefaultCardLimit);
+    getDifficultWords().then((dw) => setDifficultWordCount(dw.filter((w) => w.count >= 3).length));
   }, []);
 
   const handleCreate = async () => {
@@ -33,6 +40,35 @@ export function Dashboard({ navigate }: Props) {
     await createDeck(name);
     setNewDeckName('');
     setShowInput(false);
+  };
+
+  const handleApkgImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setApkgImporting(true);
+    setApkgError('');
+    try {
+      const { cards, deckName } = await parseApkg(file);
+      if (cards.length === 0) {
+        setApkgError('No cards found in the .apkg file');
+        setApkgImporting(false);
+        return;
+      }
+      const deck: Deck = {
+        id: crypto.randomUUID(),
+        name: deckName,
+        createdAt: Date.now(),
+      };
+      await addDeck(deck);
+      const newCards = cards.map((c) => createNewCard(deck.id, c.front, c.back));
+      await addCardsBatch(newCards);
+      refresh();
+      navigate({ type: 'deck', deckId: deck.id });
+    } catch (err) {
+      setApkgError(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    setApkgImporting(false);
+    if (apkgInputRef.current) apkgInputRef.current.value = '';
   };
 
   if (loading) {
@@ -58,6 +94,20 @@ export function Dashboard({ navigate }: Props) {
             Import CSV
           </button>
           <button
+            onClick={() => apkgInputRef.current?.click()}
+            disabled={apkgImporting}
+            className="bg-surface-light border border-primary text-primary px-4 py-2 rounded-full font-medium transition-colors shadow-sm text-sm hover:bg-primary/10 disabled:opacity-50"
+          >
+            {apkgImporting ? 'Importing...' : 'Import .apkg'}
+          </button>
+          <input
+            ref={apkgInputRef}
+            type="file"
+            accept=".apkg"
+            onChange={handleApkgImport}
+            className="hidden"
+          />
+          <button
             onClick={() => { setShowInput(true); setShowImport(false); }}
             className="bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-full font-medium transition-colors shadow-sm text-sm"
           >
@@ -65,6 +115,10 @@ export function Dashboard({ navigate }: Props) {
           </button>
         </div>
       </div>
+
+      {apkgError && (
+        <div className="bg-danger/10 text-danger text-sm rounded-xl px-4 py-2 mb-3">{apkgError}</div>
+      )}
 
       {/* Settings panel */}
       {showSettings && (
@@ -223,6 +277,30 @@ export function Dashboard({ navigate }: Props) {
               onDelete={() => removeDeck(deck.id)}
             />
           ))}
+        </div>
+      )}
+
+      {/* Difficult Words deck card */}
+      {difficultWordCount > 0 && (
+        <div className="mt-3">
+          <div className="bg-surface-light rounded-2xl p-5 hover:bg-surface-card/60 transition-colors shadow-sm cursor-pointer"
+            onClick={() => navigate({ type: 'difficultWords' })}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">Difficult Words</h3>
+                <p className="text-sm text-text-muted mt-1">
+                  <span className="text-primary font-medium">{difficultWordCount} word{difficultWordCount !== 1 ? 's' : ''}</span>
+                </p>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); navigate({ type: 'difficultWords' }); }}
+                className="bg-surface-light border border-primary text-primary px-4 py-2 rounded-full text-sm font-medium transition-colors shadow-sm hover:bg-primary hover:text-white"
+              >
+                View
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

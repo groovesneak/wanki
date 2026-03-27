@@ -3,6 +3,7 @@ import type { View, Deck } from './types';
 import { Dashboard } from './components/Dashboard';
 import { DeckView } from './components/DeckView';
 import { ReviewSession } from './components/ReviewSession';
+import { DifficultWords } from './components/DifficultWords';
 import * as db from './db';
 
 function App() {
@@ -37,6 +38,8 @@ function App() {
           navigate={setView}
         />
       );
+    case 'difficultWords':
+      return <DifficultWords navigate={setView} />;
     default:
       return <Dashboard navigate={setView} />;
   }

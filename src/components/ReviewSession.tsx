@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Card, Rating, View } from '../types';
 import { useCards } from '../hooks/useCards';
 import { previewIntervals, reviewCard } from '../srs';
-import { getSetting, setSetting } from '../db';
+import { getSetting, setSetting, logDifficultWords } from '../db';
 
 interface Props {
   deckId: string;
@@ -206,6 +206,36 @@ function highlightCorrectAnswer(
   }));
 }
 
+/** Extract the highlighted (missed) words from the correct answer */
+function extractHighlightedWords(chars: { char: string; highlight: boolean }[]): string[] {
+  const words: string[] = [];
+  let currentWord = '';
+  let inHighlight = false;
+
+  for (const c of chars) {
+    if (c.char === ' ') {
+      if (inHighlight && currentWord.trim()) {
+        words.push(currentWord.trim());
+        currentWord = '';
+      }
+      inHighlight = false;
+    } else if (c.highlight) {
+      inHighlight = true;
+      currentWord += c.char;
+    } else {
+      if (inHighlight && currentWord.trim()) {
+        words.push(currentWord.trim());
+        currentWord = '';
+      }
+      inHighlight = false;
+    }
+  }
+  if (inHighlight && currentWord.trim()) {
+    words.push(currentWord.trim());
+  }
+  return words;
+}
+
 /** Group consecutive chars with the same highlight state into runs */
 function groupHighlighted(
   chars: { char: string; highlight: boolean }[],
@@ -335,6 +365,29 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
     const overrideDays = rating === 'easy' ? customDays : undefined;
     const updated = await rateCard(currentCard, rating, overrideDays);
 
+    // Log difficult words if the answer was incorrect
+    if (gradeResult === 'incorrect' && answer) {
+      try {
+        const diff = dualDiff(answer, currentCard.back, hardMode);
+        const highlighted = highlightCorrectAnswer(currentCard.back, diff.correctErrors, hardMode);
+        const missedWords = extractHighlightedWords(highlighted);
+        if (missedWords.length > 0) {
+          const now = Date.now();
+          await logDifficultWords(missedWords.map((word) => ({
+            word,
+            typed: answer,
+            cardId: currentCard.id,
+            deckId,
+            cardFront: currentCard.front,
+            cardBack: currentCard.back,
+            timestamp: now,
+          })));
+        }
+      } catch {
+        // Don't block the review flow if logging fails
+      }
+    }
+
     // Check if card is "completed" (scheduled for tomorrow or later)
     const DAY = 24 * 60 * 60 * 1000;
     const isCompleted = updated.dueDate - Date.now() >= DAY * 0.5;
@@ -355,7 +408,7 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
     setCurrentIndex((i) => i + 1);
 
     setTimeout(() => inputRef.current?.focus(), 50);
-  }, [currentCard, rateCard, customDays]);
+  }, [currentCard, rateCard, customDays, gradeResult, answer, hardMode, deckId]);
 
   const handleEditSave = useCallback(async () => {
     if (!currentCard || !editFront.trim() || !editBack.trim()) return;
@@ -582,6 +635,8 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
 
               {/* Back */}
               <div className="card-face card-back bg-surface-light rounded-2xl p-8 min-h-[200px] flex flex-col items-center justify-center absolute inset-0 w-full overflow-visible shadow-md">
+                {/* Question at top of revealed card */}
+                <p className="text-sm text-text-muted text-center mb-4 pb-3 border-b border-surface-card w-full">{currentCard.front}</p>
                 {gradeResult && (() => {
                   const tier = getGradeTier(answer, currentCard.back, hardMode);
                   const isExact = gradeResult === 'correct';
@@ -590,31 +645,31 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
 
                   return (
                     <>
-                      {/* Correct answer — with word-level highlighting if incorrect */}
-                      {highlighted ? (
-                        <p className="text-xl text-center leading-relaxed whitespace-pre-wrap">
-                          {groupHighlighted(highlighted).map((g, i) => (
-                            g.highlight ? (
-                              <span
-                                key={i}
-                                className="bg-surface-light border border-primary text-primary rounded px-1 py-0.5 mx-[1px]"
-                              >
-                                {g.text}
-                              </span>
-                            ) : (
-                              <span key={i}>{g.text}</span>
-                            )
-                          ))}
-                        </p>
-                      ) : (
-                        <p className="text-xl text-center leading-relaxed whitespace-pre-wrap">{currentCard.back}</p>
-                      )}
-
-                      {/* Typed answer — all green if correct */}
-                      {isExact && (
-                        <p className="mt-4 text-xl text-center leading-relaxed whitespace-pre-wrap text-success">
+                      {/* If 100% correct, just show typed answer in green */}
+                      {isExact ? (
+                        <p className="text-xl text-center leading-relaxed whitespace-pre-wrap text-success">
                           {answer}
                         </p>
+                      ) : (
+                        <>
+                          {/* Correct answer — with word-level highlighting */}
+                          {highlighted && (
+                            <p className="text-xl text-center leading-relaxed whitespace-pre-wrap">
+                              {groupHighlighted(highlighted).map((g, i) => (
+                                g.highlight ? (
+                                  <span
+                                    key={i}
+                                    className="bg-surface-light border border-primary text-primary rounded px-1 py-0.5 mx-[1px]"
+                                  >
+                                    {g.text}
+                                  </span>
+                                ) : (
+                                  <span key={i}>{g.text}</span>
+                                )
+                              ))}
+                            </p>
+                          )}
+                        </>
                       )}
 
                       {/* Coloured diff of typed answer */}
