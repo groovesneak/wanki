@@ -335,14 +335,15 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
     const overrideDays = rating === 'easy' ? customDays : undefined;
     const updated = await rateCard(currentCard, rating, overrideDays);
 
-    if (rating === 'again') {
-      setQueue((q) => [...q, updated]);
-    }
-
     // Check if card is "completed" (scheduled for tomorrow or later)
     const DAY = 24 * 60 * 60 * 1000;
-    if (updated.dueDate - Date.now() >= DAY * 0.5) {
+    const isCompleted = updated.dueDate - Date.now() >= DAY * 0.5;
+
+    if (isCompleted) {
       setCompleted((c) => c + 1);
+    } else {
+      // Card is coming back soon (Again = 1min, Hard = 10min) — re-add to queue
+      setQueue((q) => [...q, updated]);
     }
 
     setReviewed((r) => r + 1);
