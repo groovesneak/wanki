@@ -220,10 +220,9 @@ export function DifficultWords({ navigate }: Props) {
                   <div className="px-4 pb-4 space-y-2">
                     <div className="border-t border-surface-card pt-3">
                       {uniqueExamples.map((ex, j) => (
-                        <div key={j} className="text-sm text-text-muted py-1.5">
-                          <span className="text-text">{ex.cardFront}</span>
-                          <span className="mx-2 text-text-muted">→</span>
-                          <span className="text-text">{highlightWord(ex.cardBack, dw.word)}</span>
+                        <div key={j} className="text-sm py-2">
+                          <div className="text-text-muted">{ex.cardFront}</div>
+                          <div className="text-text mt-0.5">{highlightWord(ex.cardBack, dw.word)}</div>
                         </div>
                       ))}
                     </div>
