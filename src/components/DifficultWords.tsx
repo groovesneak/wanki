@@ -1,9 +1,43 @@
 import { useState, useEffect } from 'react';
 import type { View } from '../types';
+import type { Card } from '../types';
 import { getDifficultWords, clearDifficultWords, getAllDecks, type DifficultWordSummary } from '../db';
 
 interface Props {
   navigate: (view: View) => void;
+}
+
+/** Highlight whole-word occurrences of `word` in `text` with bold */
+function highlightWord(text: string, word: string) {
+  if (!word) return <>{text}</>;
+  const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`\\b${escaped}\\b`, 'gi');
+  const parts: (string | React.ReactElement)[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    parts.push(
+      <strong key={match.index} className="text-primary font-bold">{match[0]}</strong>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex === 0) return <>{text}</>;
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return <>{parts}</>;
+}
+
+/** Deduplicate examples by cardFront+cardBack */
+function dedupeExamples(examples: { typed: string; cardFront: string; cardBack: string }[]) {
+  const seen = new Set<string>();
+  return examples.filter((ex) => {
+    const key = ex.cardFront.toLowerCase().trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export function DifficultWords({ navigate }: Props) {
@@ -13,6 +47,72 @@ export function DifficultWords({ navigate }: Props) {
   const [search, setSearch] = useState('');
   const [sortAlpha, setSortAlpha] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showStudyMenu, setShowStudyMenu] = useState(false);
+
+  /** Study individual words — creates temporary cards with word as front, sentence as back */
+  const handleStudyWords = () => {
+    const wordCards: Card[] = [];
+    const seen = new Set<string>();
+    for (const dw of filtered) {
+      if (seen.has(dw.word)) continue;
+      seen.add(dw.word);
+      const example = dedupeExamples(dw.examples)[0];
+      if (!example) continue;
+      const now = Date.now();
+      wordCards.push({
+        id: `dw-${dw.word}-${dw.deckId}`,
+        deckId: dw.deckId,
+        front: dw.word,
+        back: example.cardBack,
+        interval: 0,
+        repetitions: 0,
+        easeFactor: 2.5,
+        dueDate: now,
+        createdAt: now,
+      });
+    }
+    if (wordCards.length > 0) {
+      navigate({ type: 'difficultWordsReview', mode: 'words', cards: wordCards });
+    }
+  };
+
+  /** Study original cards that contain the difficult words */
+  const handleStudyOriginalCards = async () => {
+    const cardIds = new Set<string>();
+    for (const dw of filtered) {
+      for (const ex of dw.examples) {
+        // Find the card ID from the difficult word entries
+        cardIds.add(`${ex.cardFront}::${ex.cardBack}`);
+      }
+    }
+    // Fetch unique original cards
+    const allCards: Card[] = [];
+    const seenIds = new Set<string>();
+    for (const dw of filtered) {
+      for (const ex of dedupeExamples(dw.examples)) {
+        const key = `${ex.cardFront}::${ex.cardBack}`;
+        if (seenIds.has(key)) continue;
+        seenIds.add(key);
+        // Try to find the actual card
+        const now = Date.now();
+        allCards.push({
+          id: `dw-card-${key}`,
+          deckId: dw.deckId,
+          front: ex.cardFront,
+          back: ex.cardBack,
+          interval: 0,
+          repetitions: 0,
+          easeFactor: 2.5,
+          dueDate: now,
+          createdAt: now,
+        });
+      }
+    }
+    if (allCards.length > 0) {
+      navigate({ type: 'difficultWordsReview', mode: 'cards', cards: allCards });
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -86,7 +186,35 @@ export function DifficultWords({ navigate }: Props) {
         </div>
       </div>
 
-      <h2 className="text-2xl font-bold mb-4">Difficult Words</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-2xl font-bold">Difficult Words</h2>
+        {filtered.length > 0 && (
+          <div className="relative">
+            <button
+              onClick={() => setShowStudyMenu(!showStudyMenu)}
+              className="bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-full text-sm font-medium transition-colors shadow-sm"
+            >
+              Study
+            </button>
+            {showStudyMenu && (
+              <div className="absolute right-0 mt-2 bg-surface-light border border-surface-card rounded-xl shadow-lg overflow-hidden z-10 min-w-[180px]">
+                <button
+                  onClick={() => { handleStudyWords(); setShowStudyMenu(false); }}
+                  className="w-full text-left px-4 py-2.5 text-sm text-text hover:bg-primary hover:text-white transition-colors"
+                >
+                  Individual words
+                </button>
+                <button
+                  onClick={() => { handleStudyOriginalCards(); setShowStudyMenu(false); }}
+                  className="w-full text-left px-4 py-2.5 text-sm text-text hover:bg-primary hover:text-white transition-colors"
+                >
+                  Original cards
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Search and sort */}
       <div className="flex items-center gap-2 mb-4">
@@ -113,31 +241,63 @@ export function DifficultWords({ navigate }: Props) {
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map((dw, i) => (
-            <div
-              key={`${dw.word}-${dw.deckId}-${i}`}
-              className="bg-surface-light rounded-2xl p-4 shadow-sm"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="font-semibold text-lg">{dw.word}</span>
-                  <span className="text-text-muted text-xs ml-2">{deckNames[dw.deckId] || 'Unknown deck'}</span>
-                </div>
-                <span className="bg-primary/10 text-primary text-xs font-bold px-2.5 py-1 rounded-full">
-                  {dw.count}x
-                </span>
-              </div>
-              <div className="mt-2 space-y-1">
-                {dw.examples.map((ex, j) => (
-                  <div key={j} className="text-xs text-text-muted">
-                    <span className="text-text">{ex.cardFront}</span>
-                    <span className="mx-1.5">→</span>
-                    <span className="text-text">{ex.cardBack}</span>
+          {filtered.map((dw, i) => {
+            const cardKey = `${dw.word}-${dw.deckId}-${i}`;
+            const isExpanded = expandedId === cardKey;
+            const uniqueExamples = dedupeExamples(dw.examples);
+
+            return (
+              <div
+                key={cardKey}
+                className="bg-surface-light rounded-2xl shadow-sm overflow-hidden"
+              >
+                {/* Collapsed row — always visible */}
+                <button
+                  onClick={() => setExpandedId(isExpanded ? null : cardKey)}
+                  className="w-full p-4 flex items-center justify-between text-left hover:bg-surface-card/40 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="font-semibold text-lg">{dw.word}</span>
+                    <span className="text-text-muted text-xs">{deckNames[dw.deckId] || 'Unknown'}</span>
                   </div>
-                ))}
+                  <div className="flex items-center gap-2">
+                    <span className="bg-primary/10 text-primary text-xs font-bold px-2.5 py-1 rounded-full">
+                      {dw.count}x
+                    </span>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className={`text-text-muted transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                    >
+                      <path d="m6 9 6 6 6-6"/>
+                    </svg>
+                  </div>
+                </button>
+
+                {/* Expanded examples */}
+                {isExpanded && uniqueExamples.length > 0 && (
+                  <div className="px-4 pb-4 space-y-2">
+                    <div className="border-t border-surface-card pt-3">
+                      {uniqueExamples.map((ex, j) => (
+                        <div key={j} className="text-sm text-text-muted py-1.5">
+                          <span className="text-text">{ex.cardFront}</span>
+                          <span className="mx-2 text-text-muted">→</span>
+                          <span className="text-text">{highlightWord(ex.cardBack, dw.word)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

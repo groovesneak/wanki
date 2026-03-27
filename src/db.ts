@@ -295,7 +295,11 @@ export async function getDifficultWords(deckId?: string): Promise<DifficultWordS
     if (existing) {
       existing.count++;
       if (entry.timestamp > existing.lastSeen) existing.lastSeen = entry.timestamp;
-      if (existing.examples.length < 3) {
+      const exKey = entry.cardFront.toLowerCase().trim();
+      const alreadyHas = existing.examples.some(
+        (ex) => ex.cardFront.toLowerCase().trim() === exKey
+      );
+      if (!alreadyHas && existing.examples.length < 20) {
         existing.examples.push({ typed: entry.typed, cardFront: entry.cardFront, cardBack: entry.cardBack });
       }
     } else {

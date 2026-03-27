@@ -8,6 +8,7 @@ interface Props {
   deckId: string;
   deckName: string;
   navigate: (view: View) => void;
+  preloadedCards?: Card[];
 }
 
 /** Strip everything except letters and digits, then lowercase (easy mode) or keep as-is (hard mode) */
@@ -278,8 +279,9 @@ function getRecommendedRating(typed: string, correct: string, hardMode = false):
 
 // ── Component ───────────────────────────────────────────────────────
 
-export function ReviewSession({ deckId, deckName, navigate }: Props) {
+export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Props) {
   const { dueCards, loading, rateCard, editCard, removeCard } = useCards(deckId);
+  const isPreloaded = !!preloadedCards;
   const [queue, setQueue] = useState<Card[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
@@ -329,14 +331,20 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
   // Custom days for the "Custom" button
   const [customDays, setCustomDays] = useState<number>(4);
 
-  // Initialize queue once when due cards load
+  // Initialize queue once when due cards load (or from preloaded cards)
   useEffect(() => {
-    if (!loading && !initialized) {
-      setQueue([...dueCards]);
-      setSessionTotal(dueCards.length);
-      setInitialized(true);
+    if (!initialized) {
+      if (isPreloaded) {
+        setQueue([...preloadedCards]);
+        setSessionTotal(preloadedCards.length);
+        setInitialized(true);
+      } else if (!loading) {
+        setQueue([...dueCards]);
+        setSessionTotal(dueCards.length);
+        setInitialized(true);
+      }
     }
-  }, [loading, dueCards, initialized]);
+  }, [loading, dueCards, initialized, isPreloaded, preloadedCards]);
 
   const currentCard = queue[currentIndex];
   const totalCards = queue.length;
@@ -362,41 +370,51 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
 
   const handleRate = useCallback(async (rating: Rating) => {
     if (!currentCard) return;
-    const overrideDays = rating === 'easy' ? customDays : undefined;
-    const updated = await rateCard(currentCard, rating, overrideDays);
 
-    // Log difficult words if the answer was incorrect
-    if (gradeResult === 'incorrect' && answer) {
-      try {
-        const diff = dualDiff(answer, currentCard.back, hardMode);
-        const highlighted = highlightCorrectAnswer(currentCard.back, diff.correctErrors, hardMode);
-        const missedWords = extractHighlightedWords(highlighted);
-        if (missedWords.length > 0) {
-          const now = Date.now();
-          await logDifficultWords(missedWords.map((word) => ({
-            word,
-            typed: answer,
-            cardId: currentCard.id,
-            deckId,
-            cardFront: currentCard.front,
-            cardBack: currentCard.back,
-            timestamp: now,
-          })));
-        }
-      } catch {
-        // Don't block the review flow if logging fails
+    if (isPreloaded) {
+      // Preloaded (difficult words) — don't persist to DB, just advance
+      if (rating === 'again') {
+        setQueue((q) => [...q, currentCard]);
+      } else {
+        setCompleted((c) => c + 1);
       }
-    }
-
-    // Check if card is "completed" (scheduled for tomorrow or later)
-    const DAY = 24 * 60 * 60 * 1000;
-    const isCompleted = updated.dueDate - Date.now() >= DAY * 0.5;
-
-    if (isCompleted) {
-      setCompleted((c) => c + 1);
     } else {
-      // Card is coming back soon (Again = 1min, Hard = 10min) — re-add to queue
-      setQueue((q) => [...q, updated]);
+      const overrideDays = rating === 'easy' ? customDays : undefined;
+      const updated = await rateCard(currentCard, rating, overrideDays);
+
+      // Log difficult words for any non-perfect answer
+      if (gradeResult && gradeResult !== 'correct' && answer) {
+        try {
+          const diff = dualDiff(answer, currentCard.back, hardMode);
+          const highlighted = highlightCorrectAnswer(currentCard.back, diff.correctErrors, hardMode);
+          const missedWords = extractHighlightedWords(highlighted);
+          if (missedWords.length > 0) {
+            const now = Date.now();
+            await logDifficultWords(missedWords.map((word) => ({
+              word,
+              typed: answer,
+              cardId: currentCard.id,
+              deckId,
+              cardFront: currentCard.front,
+              cardBack: currentCard.back,
+              timestamp: now,
+            })));
+          }
+        } catch {
+          // Don't block the review flow if logging fails
+        }
+      }
+
+      // Check if card is "completed" (scheduled for tomorrow or later)
+      const DAY = 24 * 60 * 60 * 1000;
+      const isCompleted = updated.dueDate - Date.now() >= DAY * 0.5;
+
+      if (isCompleted) {
+        setCompleted((c) => c + 1);
+      } else {
+        // Card is coming back soon (Again = 1min, Hard = 10min) — re-add to queue
+        setQueue((q) => [...q, updated]);
+      }
     }
 
     setReviewed((r) => r + 1);
@@ -495,7 +513,7 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
         <h2 className="text-2xl font-bold mb-2">No cards due!</h2>
         <p className="text-text-muted mb-6">All caught up. Come back later for more reviews.</p>
         <button
-          onClick={() => navigate({ type: 'deck', deckId })}
+          onClick={() => navigate(isPreloaded ? { type: 'difficultWords' } : { type: 'deck', deckId })}
           className="bg-surface-card hover:bg-primary/10 text-text px-5 py-2.5 rounded-full shadow-sm font-medium transition-colors"
         >
           Back to deck
@@ -511,7 +529,7 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
         <p className="text-text-muted mb-6">You reviewed {reviewed} card{reviewed !== 1 ? 's' : ''}</p>
         <div className="flex gap-3">
           <button
-            onClick={() => navigate({ type: 'deck', deckId })}
+            onClick={() => navigate(isPreloaded ? { type: 'difficultWords' } : { type: 'deck', deckId })}
             className="bg-surface-card hover:bg-primary/10 text-text px-5 py-2.5 rounded-full shadow-sm font-medium transition-colors"
           >
             Back to deck
@@ -532,7 +550,7 @@ export function ReviewSession({ deckId, deckName, navigate }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <button
-          onClick={() => navigate({ type: 'deck', deckId })}
+          onClick={() => navigate(isPreloaded ? { type: 'difficultWords' } : { type: 'deck', deckId })}
           className="text-text-muted hover:text-text text-sm inline-flex items-center gap-1 transition-colors"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>

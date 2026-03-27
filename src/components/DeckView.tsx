@@ -260,6 +260,11 @@ export function DeckView({ deckId, deckName, navigate }: Props) {
               }}
               onEditFrontChange={setEditFrontVal}
               onEditBackChange={setEditBackVal}
+              onSwap={() => {
+                const tmp = editFrontVal;
+                setEditFrontVal(editBackVal);
+                setEditBackVal(tmp);
+              }}
               onStartDelete={() => setDeleting(card.id)}
               onConfirmDelete={() => { removeCard(card.id); setDeleting(null); }}
               onCancelDelete={() => setDeleting(null)}
@@ -287,6 +292,7 @@ function CardRow({
   onSaveEdit,
   onEditFrontChange,
   onEditBackChange,
+  onSwap,
   onStartDelete,
   onConfirmDelete,
   onCancelDelete,
@@ -305,6 +311,7 @@ function CardRow({
   onSaveEdit: () => void;
   onEditFrontChange: (v: string) => void;
   onEditBackChange: (v: string) => void;
+  onSwap: () => void;
   onStartDelete: () => void;
   onConfirmDelete: () => void;
   onCancelDelete: () => void;
@@ -333,13 +340,23 @@ function CardRow({
           className="w-full bg-surface-card rounded-lg px-3 py-2 text-text text-sm outline-none focus:ring-2 focus:ring-primary/50"
           placeholder="Back..."
         />
-        <div className="flex gap-2 justify-end">
-          <button onClick={onCancelEdit} className="text-text-muted hover:text-text text-xs px-3 py-1.5 transition-colors">
-            Cancel
+        <div className="flex gap-2 justify-between">
+          <button
+            onClick={onSwap}
+            className="bg-surface-light border border-primary text-primary px-3 py-1.5 rounded-full text-xs font-medium transition-colors shadow-sm hover:bg-primary/10 flex items-center gap-1"
+            title="Swap front and back"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 16V4m0 0L3 8m4-4l4 4"/><path d="M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+            Swap
           </button>
-          <button onClick={onSaveEdit} className="bg-primary hover:bg-primary-hover text-white text-xs px-3 py-1.5 rounded-lg font-medium transition-colors">
-            Save
-          </button>
+          <div className="flex gap-2">
+            <button onClick={onCancelEdit} className="text-text-muted hover:text-text text-xs px-3 py-1.5 transition-colors">
+              Cancel
+            </button>
+            <button onClick={onSaveEdit} className="bg-primary hover:bg-primary-hover text-white text-xs px-3 py-1.5 rounded-lg font-medium transition-colors">
+              Save
+            </button>
+          </div>
         </div>
       </div>
     );

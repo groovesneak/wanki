@@ -24,6 +24,7 @@ export function Dashboard({ navigate }: Props) {
   const [difficultWordCount, setDifficultWordCount] = useState(0);
   const [apkgImporting, setApkgImporting] = useState(false);
   const [apkgError, setApkgError] = useState('');
+  const [showImportMenu, setShowImportMenu] = useState(false);
   const apkgInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -87,19 +88,31 @@ export function Dashboard({ navigate }: Props) {
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
         </button>
         <div className="flex gap-2 ml-auto">
-          <button
-            onClick={() => { setShowImport(true); setShowInput(false); }}
-            className="bg-surface-light border border-primary text-primary px-4 py-2 rounded-full font-medium transition-colors shadow-sm text-sm hover:bg-primary/10"
-          >
-            Import CSV
-          </button>
-          <button
-            onClick={() => apkgInputRef.current?.click()}
-            disabled={apkgImporting}
-            className="bg-surface-light border border-primary text-primary px-4 py-2 rounded-full font-medium transition-colors shadow-sm text-sm hover:bg-primary/10 disabled:opacity-50"
-          >
-            {apkgImporting ? 'Importing...' : 'Import .apkg'}
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setShowImportMenu(!showImportMenu)}
+              disabled={apkgImporting}
+              className="bg-surface-light border border-primary text-primary px-4 py-2 rounded-full font-medium transition-colors shadow-sm text-sm hover:bg-primary/10 disabled:opacity-50"
+            >
+              {apkgImporting ? 'Importing...' : 'Import'}
+            </button>
+            {showImportMenu && (
+              <div className="absolute right-0 mt-2 bg-surface-light border border-surface-card rounded-xl shadow-lg overflow-hidden z-10 min-w-[140px]">
+                <button
+                  onClick={() => { setShowImport(true); setShowInput(false); setShowImportMenu(false); }}
+                  className="w-full text-left px-4 py-2.5 text-sm text-text hover:bg-primary hover:text-white transition-colors"
+                >
+                  Import CSV
+                </button>
+                <button
+                  onClick={() => { apkgInputRef.current?.click(); setShowImportMenu(false); }}
+                  className="w-full text-left px-4 py-2.5 text-sm text-text hover:bg-primary hover:text-white transition-colors"
+                >
+                  Import .apkg
+                </button>
+              </div>
+            )}
+          </div>
           <input
             ref={apkgInputRef}
             type="file"
@@ -293,12 +306,6 @@ export function Dashboard({ navigate }: Props) {
                   <span className="text-primary font-medium">{difficultWordCount} word{difficultWordCount !== 1 ? 's' : ''}</span>
                 </p>
               </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); navigate({ type: 'difficultWords' }); }}
-                className="bg-surface-light border border-primary text-primary px-4 py-2 rounded-full text-sm font-medium transition-colors shadow-sm hover:bg-primary hover:text-white"
-              >
-                View
-              </button>
             </div>
           </div>
         </div>

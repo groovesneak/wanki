@@ -34,9 +34,10 @@ export async function parseApkg(file: File): Promise<{ cards: ApkgCard[]; deckNa
 
   const dbData = await dbFile.async('uint8array');
 
-  // Initialize sql.js
+  // Initialize sql.js with local wasm file
+  const basePath = import.meta.env.BASE_URL || '/';
   const SQL = await initSqlJs({
-    locateFile: (filename: string) => `https://sql.js.org/dist/${filename}`,
+    locateFile: () => `${basePath}sql-wasm.wasm`,
   });
 
   const db: Database = new SQL.Database(dbData);

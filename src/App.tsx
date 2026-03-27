@@ -40,6 +40,15 @@ function App() {
       );
     case 'difficultWords':
       return <DifficultWords navigate={setView} />;
+    case 'difficultWordsReview':
+      return (
+        <ReviewSession
+          deckId="difficult-words"
+          deckName="Difficult Words"
+          navigate={setView}
+          preloadedCards={view.cards}
+        />
+      );
     default:
       return <Dashboard navigate={setView} />;
   }
