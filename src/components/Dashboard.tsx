@@ -312,7 +312,7 @@ export function Dashboard({ navigate }: Props) {
               <div>
                 <h3 className="text-lg font-semibold">Difficult Words</h3>
                 <p className="text-sm text-text-muted mt-1">
-                  <span className="text-primary font-medium">{difficultWordCount} word{difficultWordCount !== 1 ? 's' : ''}</span>
+                  <span className={`${allDone ? 'text-success' : 'text-primary'} font-medium`}>{difficultWordCount} word{difficultWordCount !== 1 ? 's' : ''}</span>
                 </p>
               </div>
             </div>
