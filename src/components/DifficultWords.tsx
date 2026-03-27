@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { View } from '../types';
-import type { Card } from '../types';
-import { getDifficultWords, clearDifficultWords, getAllDecks, type DifficultWordSummary } from '../db';
+import { getDifficultWords, clearAllDifficultWords, deleteDifficultWord, getAllDecks, type DifficultWordSummary } from '../db';
 
 interface Props {
   navigate: (view: View) => void;
@@ -48,72 +47,7 @@ export function DifficultWords({ navigate }: Props) {
   const [sortAlpha, setSortAlpha] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [showStudyMenu, setShowStudyMenu] = useState(false);
-
-  /** Study individual words — creates temporary cards with word as front, sentence as back */
-  const handleStudyWords = () => {
-    const wordCards: Card[] = [];
-    const seen = new Set<string>();
-    for (const dw of filtered) {
-      if (seen.has(dw.word)) continue;
-      seen.add(dw.word);
-      const example = dedupeExamples(dw.examples)[0];
-      if (!example) continue;
-      const now = Date.now();
-      wordCards.push({
-        id: `dw-${dw.word}-${dw.deckId}`,
-        deckId: dw.deckId,
-        front: dw.word,
-        back: example.cardBack,
-        interval: 0,
-        repetitions: 0,
-        easeFactor: 2.5,
-        dueDate: now,
-        createdAt: now,
-      });
-    }
-    if (wordCards.length > 0) {
-      navigate({ type: 'difficultWordsReview', mode: 'words', cards: wordCards });
-    }
-  };
-
-  /** Study original cards that contain the difficult words */
-  const handleStudyOriginalCards = async () => {
-    const cardIds = new Set<string>();
-    for (const dw of filtered) {
-      for (const ex of dw.examples) {
-        // Find the card ID from the difficult word entries
-        cardIds.add(`${ex.cardFront}::${ex.cardBack}`);
-      }
-    }
-    // Fetch unique original cards
-    const allCards: Card[] = [];
-    const seenIds = new Set<string>();
-    for (const dw of filtered) {
-      for (const ex of dedupeExamples(dw.examples)) {
-        const key = `${ex.cardFront}::${ex.cardBack}`;
-        if (seenIds.has(key)) continue;
-        seenIds.add(key);
-        // Try to find the actual card
-        const now = Date.now();
-        allCards.push({
-          id: `dw-card-${key}`,
-          deckId: dw.deckId,
-          front: ex.cardFront,
-          back: ex.cardBack,
-          interval: 0,
-          repetitions: 0,
-          easeFactor: 2.5,
-          dueDate: now,
-          createdAt: now,
-        });
-      }
-    }
-    if (allCards.length > 0) {
-      navigate({ type: 'difficultWordsReview', mode: 'cards', cards: allCards });
-    }
-  };
-
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   useEffect(() => {
     (async () => {
       const [dw, decks] = await Promise.all([getDifficultWords(), getAllDecks()]);
@@ -124,15 +58,6 @@ export function DifficultWords({ navigate }: Props) {
       setLoading(false);
     })();
   }, []);
-
-  const handleClearAll = async () => {
-    const deckIds = [...new Set(words.map((w) => w.deckId))];
-    for (const id of deckIds) {
-      await clearDifficultWords(id);
-    }
-    setWords([]);
-    setConfirmClear(false);
-  };
 
   let filtered = words.filter((w) =>
     w.word.toLowerCase().includes(search.toLowerCase())
@@ -157,12 +82,21 @@ export function DifficultWords({ navigate }: Props) {
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
           Back to decks
         </button>
-        <div className="flex items-center gap-2">
-          {confirmClear ? (
+      </div>
+
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-2xl font-bold">Difficult Words</h2>
+        {filtered.length > 0 && (
+          confirmClear ? (
             <div className="relative flex items-center gap-1">
               <span className="absolute -top-4 left-0 right-0 text-center text-xs font-medium text-primary">Clear all?</span>
               <button
-                onClick={handleClearAll}
+                onClick={async () => {
+                  await clearAllDifficultWords();
+                  const updated = await getDifficultWords();
+                  setWords(updated.filter((w) => w.count >= 3));
+                  setConfirmClear(false);
+                }}
                 className="bg-surface-light border border-primary text-primary px-3 py-2 rounded-full text-xs font-medium transition-colors shadow-sm hover:bg-primary hover:text-white"
               >
                 Yes
@@ -177,42 +111,11 @@ export function DifficultWords({ navigate }: Props) {
           ) : (
             <button
               onClick={() => setConfirmClear(true)}
-              className="text-text-muted hover:text-danger p-2 transition-all"
-              title="Clear all difficult words"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-2xl font-bold">Difficult Words</h2>
-        {filtered.length > 0 && (
-          <div className="relative">
-            <button
-              onClick={() => setShowStudyMenu(!showStudyMenu)}
               className="bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-full text-sm font-medium transition-colors shadow-sm"
             >
-              Study
+              Clear List
             </button>
-            {showStudyMenu && (
-              <div className="absolute right-0 mt-2 bg-surface-light border border-surface-card rounded-xl shadow-lg overflow-hidden z-10 min-w-[180px]">
-                <button
-                  onClick={() => { handleStudyWords(); setShowStudyMenu(false); }}
-                  className="w-full text-left px-4 py-2.5 text-sm text-text hover:bg-primary hover:text-white transition-colors"
-                >
-                  Individual words
-                </button>
-                <button
-                  onClick={() => { handleStudyOriginalCards(); setShowStudyMenu(false); }}
-                  className="w-full text-left px-4 py-2.5 text-sm text-text hover:bg-primary hover:text-white transition-colors"
-                >
-                  Original cards
-                </button>
-              </div>
-            )}
-          </div>
+          )
         )}
       </div>
 
@@ -264,6 +167,37 @@ export function DifficultWords({ navigate }: Props) {
                     <span className="bg-primary/10 text-primary text-xs font-bold px-2.5 py-1 rounded-full">
                       {dw.count}x
                     </span>
+                    {confirmingDeleteId === cardKey ? (
+                      <div className="relative flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        <span className="absolute -top-4 left-0 right-0 text-center text-xs font-medium text-primary">Delete?</span>
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            await deleteDifficultWord(dw.word, dw.deckId);
+                            const updated = await getDifficultWords();
+                            setWords(updated.filter((w) => w.count >= 3));
+                            setConfirmingDeleteId(null);
+                          }}
+                          className="bg-surface-light border border-primary text-primary px-3 py-1.5 rounded-full text-xs font-medium transition-colors shadow-sm hover:bg-primary hover:text-white"
+                        >
+                          Yes
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setConfirmingDeleteId(null); }}
+                          className="bg-surface-light border border-primary text-primary px-3 py-1.5 rounded-full text-xs font-medium transition-colors shadow-sm hover:bg-primary hover:text-white"
+                        >
+                          No
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setConfirmingDeleteId(cardKey); }}
+                        className="text-text-muted hover:text-danger p-1 transition-colors"
+                        title="Delete word"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                      </button>
+                    )}
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
                       width="14"

@@ -329,6 +329,28 @@ export async function clearDifficultWords(deckId: string): Promise<void> {
   await tx.done;
 }
 
+/** Delete all difficult word entries for a specific word in a deck */
+export async function deleteDifficultWord(word: string, deckId: string): Promise<void> {
+  const db = await getDb();
+  const tx = db.transaction('difficultWords', 'readwrite');
+  const store = tx.objectStore('difficultWords');
+  const all: DifficultWord[] = await store.index('deckId').getAll(deckId);
+  for (const entry of all) {
+    if (entry.word === word && entry.id != null) {
+      await store.delete(entry.id);
+    }
+  }
+  await tx.done;
+}
+
+/** Clear ALL difficult word entries across all decks */
+export async function clearAllDifficultWords(): Promise<void> {
+  const db = await getDb();
+  const tx = db.transaction('difficultWords', 'readwrite');
+  await tx.objectStore('difficultWords').clear();
+  await tx.done;
+}
+
 /** Clear all new-card log entries for a deck (used when resetting all cards) */
 export async function clearDeckNewCardLog(deckId: string): Promise<void> {
   const db = await getDb();
