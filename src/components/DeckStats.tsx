@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Card } from '../types';
 import * as db from '../db';
 
@@ -7,16 +7,19 @@ const DAY = 24 * 60 * 60 * 1000;
 
 interface Props {
   deckId: string;
+  onDoneChange?: (done: boolean) => void;
 }
 
 function isReviewCard(c: Card): boolean {
   return c.interval > 0;
 }
 
-export function DeckStats({ deckId }: Props) {
+export function DeckStats({ deckId, onDoneChange }: Props) {
   const [total, setTotal] = useState(0);
   const [studyCount, setStudyCount] = useState(0);
   const [completedCount, setCompletedCount] = useState(0);
+  const onDoneRef = useRef(onDoneChange);
+  onDoneRef.current = onDoneChange;
 
   useEffect(() => {
     (async () => {
@@ -47,9 +50,12 @@ export function DeckStats({ deckId }: Props) {
       const newSlots = Math.max(0, remaining - reviewCards.length);
       const cappedNew = Math.min(newCards.length, newSlots);
 
+      const due = reviewCards.length + cappedNew;
       setTotal(cards.length);
-      setStudyCount(reviewCards.length + cappedNew);
+      setStudyCount(due);
       setCompletedCount(completedToday.length);
+      const isDone = cards.length > 0 && due === 0;
+      onDoneRef.current?.(isDone);
     })();
   }, [deckId]);
 
@@ -61,7 +67,7 @@ export function DeckStats({ deckId }: Props) {
           {studyCount} due
         </span>
       )}
-      {completedCount > 0 && (
+      {completedCount > 0 && studyCount > 0 && (
         <span className="text-success ml-2 font-medium">
           {completedCount} complete
         </span>

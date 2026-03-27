@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import type { Deck, View } from '../types';
 import { useDecks } from '../hooks/useDecks';
 import { DeckStats } from './DeckStats';
@@ -25,7 +25,14 @@ export function Dashboard({ navigate }: Props) {
   const [apkgImporting, setApkgImporting] = useState(false);
   const [apkgError, setApkgError] = useState('');
   const [showImportMenu, setShowImportMenu] = useState(false);
+  const [deckDoneMap, setDeckDoneMap] = useState<Record<string, boolean>>({});
   const apkgInputRef = useRef<HTMLInputElement>(null);
+
+  const allDone = decks.length > 0 && decks.every((d) => deckDoneMap[d.id]);
+
+  const handleDeckDone = useCallback((deckId: string, done: boolean) => {
+    setDeckDoneMap((prev) => ({ ...prev, [deckId]: done }));
+  }, []);
 
   useEffect(() => {
     getStreak().then(setStreak);
@@ -92,7 +99,7 @@ export function Dashboard({ navigate }: Props) {
             <button
               onClick={() => setShowImportMenu(!showImportMenu)}
               disabled={apkgImporting}
-              className="bg-surface-light border border-primary text-primary px-4 py-2 rounded-full font-medium transition-colors shadow-sm text-sm hover:bg-primary/10 disabled:opacity-50"
+              className={`bg-surface-light border ${allDone ? 'border-success text-success hover:bg-success/10' : 'border-primary text-primary hover:bg-primary/10'} px-4 py-2 rounded-full font-medium transition-colors shadow-sm text-sm disabled:opacity-50`}
             >
               {apkgImporting ? 'Importing...' : 'Import'}
             </button>
@@ -122,7 +129,7 @@ export function Dashboard({ navigate }: Props) {
           />
           <button
             onClick={() => { setShowInput(true); setShowImport(false); }}
-            className="bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-full font-medium transition-colors shadow-sm text-sm"
+            className={`${allDone ? 'bg-success hover:bg-success/80' : 'bg-primary hover:bg-primary-hover'} text-white px-4 py-2 rounded-full font-medium transition-colors shadow-sm text-sm`}
           >
             + New Deck
           </button>
@@ -139,14 +146,14 @@ export function Dashboard({ navigate }: Props) {
           <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">Settings</h3>
           <div className="flex items-center justify-between">
             <label className="text-sm font-medium">Minimum daily goal (cards complete)</label>
-            <div className="flex items-center gap-0 border border-primary rounded-full overflow-hidden">
+            <div className={`flex items-center gap-0 border ${allDone ? 'border-success' : 'border-primary'} rounded-full overflow-hidden`}>
               <button
                 onClick={async () => {
                   const val = Math.max(1, dailyGoal - 1);
                   setDailyGoal(val);
                   await setSetting('dailyGoal', val);
                 }}
-                className="px-2.5 py-1.5 text-primary hover:bg-primary/10 transition-colors text-sm font-bold"
+                className={`px-2.5 py-1.5 ${allDone ? 'text-success hover:bg-success/10' : 'text-primary hover:bg-primary/10'} transition-colors text-sm font-bold`}
               >
                 −
               </button>
@@ -159,7 +166,7 @@ export function Dashboard({ navigate }: Props) {
                   setDailyGoal(val);
                   await setSetting('dailyGoal', val);
                 }}
-                className="w-10 text-center text-sm font-medium text-primary bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className={`w-10 text-center text-sm font-medium ${allDone ? 'text-success' : 'text-primary'} bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
               />
               <button
                 onClick={async () => {
@@ -167,7 +174,7 @@ export function Dashboard({ navigate }: Props) {
                   setDailyGoal(val);
                   await setSetting('dailyGoal', val);
                 }}
-                className="px-2.5 py-1.5 text-primary hover:bg-primary/10 transition-colors text-sm font-bold"
+                className={`px-2.5 py-1.5 ${allDone ? 'text-success hover:bg-success/10' : 'text-primary hover:bg-primary/10'} transition-colors text-sm font-bold`}
               >
                 +
               </button>
@@ -176,14 +183,14 @@ export function Dashboard({ navigate }: Props) {
           <p className="text-xs text-text-muted mt-1 mb-3">Streak stays alive when you reach your daily goal, or complete all available cards.</p>
           <div className="flex items-center justify-between mb-3">
             <label className="text-sm font-medium">Default deck new card daily limit</label>
-            <div className="flex items-center gap-0 border border-primary rounded-full overflow-hidden">
+            <div className={`flex items-center gap-0 border ${allDone ? 'border-success' : 'border-primary'} rounded-full overflow-hidden`}>
               <button
                 onClick={async () => {
                   const val = Math.max(1, defaultCardLimit - 1);
                   setDefaultCardLimit(val);
                   await setSetting('defaultNewCardsPerDay', val);
                 }}
-                className="px-2.5 py-1.5 text-primary hover:bg-primary/10 transition-colors text-sm font-bold"
+                className={`px-2.5 py-1.5 ${allDone ? 'text-success hover:bg-success/10' : 'text-primary hover:bg-primary/10'} transition-colors text-sm font-bold`}
               >
                 −
               </button>
@@ -196,7 +203,7 @@ export function Dashboard({ navigate }: Props) {
                   setDefaultCardLimit(val);
                   await setSetting('defaultNewCardsPerDay', val);
                 }}
-                className="w-10 text-center text-sm font-medium text-primary bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className={`w-10 text-center text-sm font-medium ${allDone ? 'text-success' : 'text-primary'} bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
               />
               <button
                 onClick={async () => {
@@ -204,7 +211,7 @@ export function Dashboard({ navigate }: Props) {
                   setDefaultCardLimit(val);
                   await setSetting('defaultNewCardsPerDay', val);
                 }}
-                className="px-2.5 py-1.5 text-primary hover:bg-primary/10 transition-colors text-sm font-bold"
+                className={`px-2.5 py-1.5 ${allDone ? 'text-success hover:bg-success/10' : 'text-primary hover:bg-primary/10'} transition-colors text-sm font-bold`}
               >
                 +
               </button>
@@ -219,7 +226,7 @@ export function Dashboard({ navigate }: Props) {
                 setNewDayHour(val);
                 await setSetting('newDayStartHour', val);
               }}
-              className="bg-surface-light border border-primary text-primary rounded-full px-4 py-1.5 text-sm font-medium outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer"
+              className={`bg-surface-light border ${allDone ? 'border-success text-success focus:ring-success/50' : 'border-primary text-primary focus:ring-primary/50'} rounded-full px-4 py-1.5 text-sm font-medium outline-none focus:ring-2 appearance-none cursor-pointer`}
             >
               {Array.from({ length: 24 }, (_, i) => (
                 <option key={i} value={i}>
@@ -233,10 +240,10 @@ export function Dashboard({ navigate }: Props) {
 
       {/* Wanki bar */}
       <div className="bg-surface-light rounded-2xl p-5 mb-3 flex items-center justify-between shadow-sm">
-        <h1 className="text-5xl font-extrabold tracking-tight text-primary">Wanki</h1>
+        <h1 className={`text-5xl font-extrabold tracking-tight ${allDone ? 'text-alldone' : 'text-primary'}`}>Wanki</h1>
         <div className="flex items-center gap-2" style={{ marginRight: '46px' }}>
-          <span className={`text-3xl ${streak.count > 0 && streak.lastDate === new Date().toISOString().slice(0, 10) ? '' : 'opacity-40 grayscale'}`}>🔥</span>
-          <span className="text-3xl font-bold text-primary">{streak.count}</span>
+          <span className={`text-4xl ${streak.count > 0 && streak.lastDate === new Date().toISOString().slice(0, 10) ? '' : 'opacity-40 grayscale'}`}>{allDone ? '🥦' : '🔥'}</span>
+          <span className={`text-4xl font-bold ${allDone ? 'text-success' : 'text-primary'}`}>{streak.count}</span>
         </div>
       </div>
 
@@ -285,9 +292,11 @@ export function Dashboard({ navigate }: Props) {
             <DeckCard
               key={deck.id}
               deck={deck}
+              allDone={allDone}
               onOpen={() => navigate({ type: 'deck', deckId: deck.id })}
               onStudy={() => navigate({ type: 'review', deckId: deck.id })}
               onDelete={() => removeDeck(deck.id)}
+              onDoneChange={(done) => handleDeckDone(deck.id, done)}
             />
           ))}
         </div>
@@ -316,17 +325,22 @@ export function Dashboard({ navigate }: Props) {
 
 function DeckCard({
   deck,
+  allDone,
   onOpen,
   onStudy,
   onDelete,
+  onDoneChange,
 }: {
   deck: Deck;
+  allDone: boolean;
   onOpen: () => void;
   onStudy: () => void;
   onDelete: () => void;
+  onDoneChange: (done: boolean) => void;
 }) {
   const [confirming, setConfirming] = useState(false);
   const [hardMode, setHardMode] = useState(false);
+  const [isDone, setIsDone] = useState(false);
 
   useEffect(() => {
     getSetting<boolean>(`hardMode:${deck.id}`, false).then(setHardMode);
@@ -340,28 +354,28 @@ function DeckCard({
   };
 
   return (
-    <div className="bg-surface-light rounded-2xl p-5 hover:bg-surface-card/60 transition-colors group shadow-sm">
+    <div className={`bg-surface-light rounded-2xl p-5 hover:bg-surface-card/60 transition-colors group shadow-sm ${isDone ? (allDone ? 'border-2 border-alldone' : 'border-2 border-success') : ''}`}>
       <div className="flex items-center justify-between">
         <button onClick={onOpen} className="flex-1 text-left">
           <h3 className="text-lg font-semibold">{deck.name}</h3>
-          <DeckStats deckId={deck.id} />
+          <DeckStats deckId={deck.id} onDoneChange={(done) => { setIsDone(done); onDoneChange(done); }} />
         </button>
         <div className="flex items-center gap-2 ml-4">
           <div className="flex flex-col items-center gap-0.5" title="Hard Mode: exact match including capitals, spaces & punctuation">
-            <span className={`text-[10px] font-semibold leading-none ${hardMode ? 'text-primary' : 'text-text-muted'}`}>Hard</span>
+            <span className={`text-[10px] font-semibold leading-none ${hardMode ? (isDone ? (allDone ? 'text-alldone' : 'text-success') : 'text-primary') : 'text-text-muted'}`}>Hard</span>
             <button
               onClick={toggleHardMode}
-              className={`relative w-10 h-5 rounded-full transition-colors ${hardMode ? 'bg-primary' : 'bg-surface-card'}`}
+              className={`relative w-10 h-5 rounded-full transition-colors ${hardMode ? (isDone ? (allDone ? 'bg-alldone' : 'bg-success') : 'bg-primary') : 'bg-surface-card'}`}
             >
               <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${hardMode ? 'translate-x-5' : 'translate-x-0.5'}`} />
             </button>
-            <span className={`text-[10px] font-semibold leading-none ${hardMode ? 'text-primary' : 'text-text-muted'}`}>Mode</span>
+            <span className={`text-[10px] font-semibold leading-none ${hardMode ? (isDone ? (allDone ? 'text-alldone' : 'text-success') : 'text-primary') : 'text-text-muted'}`}>Mode</span>
           </div>
           <button
             onClick={onStudy}
-            className="bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-full text-sm font-medium transition-colors shadow-sm"
+            className={`${isDone ? (allDone ? 'bg-alldone hover:bg-alldone/80' : 'bg-success hover:bg-success/80') : 'bg-primary hover:bg-primary-hover'} text-white px-4 py-2 rounded-full text-sm font-medium transition-colors shadow-sm`}
           >
-            Study
+            {isDone ? 'Done' : 'Study'}
           </button>
           {confirming ? (
             <div className="relative flex items-center gap-1">
