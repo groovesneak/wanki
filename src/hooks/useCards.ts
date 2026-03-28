@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Card, Rating } from '../types';
+import type { Card, Rating, EaseMode } from '../types';
 import * as db from '../db';
 import { reviewCard, createNewCard } from '../srs';
 
@@ -14,7 +14,8 @@ export function useCards(deckId: string) {
     const all = await db.getCardsByDeck(deckId);
     setCards(all.sort((a, b) => a.createdAt - b.createdAt));
 
-    const due = await db.getDueCards(deckId);
+    const dueRaw = await db.getDueCards(deckId);
+    const due = dueRaw.filter((c) => !c.completed);
     const allCards = await db.getCardsByDeck(deckId);
 
     // Enforce daily new-card limit: per-deck override → global default → hardcoded fallback
@@ -104,15 +105,13 @@ export function useCards(deckId: string) {
     await refresh();
   }, [deckId, refresh]);
 
-  const rateCard = useCallback(async (card: Card, rating: Rating, customDueDays?: number) => {
-    const updated = reviewCard(card, rating);
+  const rateCard = useCallback(async (card: Card, rating: Rating, customDueDays?: number, easeMode: EaseMode = 'medium') => {
+    const updated = reviewCard(card, rating, easeMode);
     if (customDueDays !== undefined) {
       updated.dueDate = Date.now() + customDueDays * 24 * 60 * 60 * 1000;
       updated.interval = customDueDays;
     }
     await db.updateCard(updated);
-
-    // No newCardLog needed — we count completions directly
 
     // Record review and check if streak goal is met
     await db.recordReviewAndCheckStreak();
@@ -120,5 +119,13 @@ export function useCards(deckId: string) {
     return updated;
   }, [deckId]);
 
-  return { cards, dueCards, loading, addNewCard, editCard, removeCard, resetCard, resetAllCards, rateCard, refresh };
+  const completeCard = useCallback(async (id: string) => {
+    const card = await db.getCard(id);
+    if (card) {
+      await db.updateCard({ ...card, completed: true });
+      await refresh();
+    }
+  }, [refresh]);
+
+  return { cards, dueCards, loading, addNewCard, editCard, removeCard, resetCard, resetAllCards, rateCard, completeCard, refresh };
 }

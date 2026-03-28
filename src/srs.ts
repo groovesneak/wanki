@@ -1,43 +1,45 @@
-import type { Card, Rating } from './types';
+import type { Card, Rating, EaseMode } from './types';
 
 const MINUTE = 60 * 1000;
 const DAY = 24 * 60 * MINUTE;
 
-const RATING_QUALITY: Record<Rating, number> = {
-  again: 0,
-  hard: 2,
-  good: 4,
-  easy: 5,
+const EASE_FACTORS: Record<EaseMode, number> = {
+  shallow: 1.3,
+  medium: 1.5,
+  steep: 2.0,
 };
 
-export function reviewCard(card: Card, rating: Rating): Card {
-  const quality = RATING_QUALITY[rating];
-  let { interval, repetitions, easeFactor } = card;
+// Ramp sequences before ease factor kicks in
+const RAMPS: Record<EaseMode, number[]> = {
+  shallow: [1, 2, 3, 4], // 1→2→3→4 then ×1.3
+  medium:  [1, 2, 4],    // 1→2→4 then ×1.5
+  steep:   [1, 2, 4],    // 1→2→4 then ×2.0
+};
 
-  // Update ease factor using SM-2 formula
-  easeFactor = easeFactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
-  if (easeFactor < 1.3) easeFactor = 1.3;
+export function reviewCard(card: Card, rating: Rating, easeMode: EaseMode = 'medium'): Card {
+  const easeFactor = EASE_FACTORS[easeMode];
+  const ramp = RAMPS[easeMode];
+  let { interval, repetitions } = card;
 
-  if (quality < 3) {
-    // Failed: reset
+  if (rating === 'again' || rating === 'hard') {
+    // Failed or struggled: reset
     repetitions = 0;
     interval = 0;
   } else {
+    // Good or Easy: advance
     repetitions += 1;
-    if (repetitions === 1) {
-      interval = 1;
-    } else if (repetitions === 2) {
-      interval = 6;
+    if (repetitions <= ramp.length) {
+      interval = ramp[repetitions - 1];
     } else {
       interval = Math.round(interval * easeFactor);
     }
   }
 
-  // Apply rating-specific modifiers
+  // Apply rating-specific due dates
   let dueDate: number;
   switch (rating) {
     case 'again':
-      dueDate = Date.now() + 1 * MINUTE; // Show again in 1 minute
+      dueDate = Date.now() + 1 * MINUTE;
       break;
     case 'hard':
       dueDate = interval === 0
@@ -50,7 +52,6 @@ export function reviewCard(card: Card, rating: Rating): Card {
     case 'easy':
       interval = Math.max(Math.round(interval * 1.3), 4);
       dueDate = Date.now() + interval * DAY;
-      easeFactor += 0.15;
       break;
   }
 
@@ -58,18 +59,18 @@ export function reviewCard(card: Card, rating: Rating): Card {
     ...card,
     interval,
     repetitions,
-    easeFactor,
+    easeFactor: card.easeFactor, // preserve original (no longer mutated)
     dueDate,
     lastReviewed: Date.now(),
   };
 }
 
 export function getNextReviewLabel(card: Card): string {
+  if (card.completed) return 'Mastered';
   if (card.repetitions === 0 && card.interval === 0 && card.dueDate <= card.createdAt) return 'Not started';
   const diff = card.dueDate - Date.now();
   if (diff <= 0) return 'Now';
   if (diff < 60 * MINUTE) return `${Math.ceil(diff / MINUTE)}m`;
-  // Skip hours — show as "today" or jump to days
   if (diff < DAY) return 'Today';
   const days = Math.round(diff / DAY);
   if (days === 1) return '1d';
@@ -80,22 +81,28 @@ export function getNextReviewLabel(card: Card): string {
   return `${Math.round(days / 365)}y`;
 }
 
-/** Preview what the next interval would be for each rating (without mutating) */
-export function previewIntervals(card: Card): Record<Rating, string> {
+/** Preview what the next interval would be for each rating */
+export function previewIntervals(card: Card, easeMode: EaseMode = 'medium'): Record<Rating, string> {
   const ratings: Rating[] = ['again', 'hard', 'good', 'easy'];
   const result = {} as Record<Rating, string>;
   for (const r of ratings) {
-    const preview = reviewCard(card, r);
+    const preview = reviewCard(card, r, easeMode);
     const diff = preview.dueDate - Date.now();
     result[r] = formatDuration(diff);
   }
   return result;
 }
 
+/** Check if a card's Good interval is >= 100 days (eligible for completion) */
+export function isEligibleForCompletion(card: Card, easeMode: EaseMode = 'medium'): boolean {
+  const preview = reviewCard(card, 'good', easeMode);
+  const diff = preview.dueDate - Date.now();
+  return diff >= 100 * DAY;
+}
+
 function formatDuration(ms: number): string {
   if (ms < MINUTE) return '<1 min';
   if (ms < 60 * MINUTE) return `${Math.round(ms / MINUTE)} min`;
-  // Skip hours — jump straight to days
   const days = Math.max(1, Math.round(ms / DAY));
   if (days === 1) return '1 day';
   if (days < 7) return `${days} days`;

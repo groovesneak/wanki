@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { Card, View } from '../types';
+import type { Card, View, EaseMode } from '../types';
 import { useCards } from '../hooks/useCards';
 import { getNextReviewLabel } from '../srs';
 import { getSetting, setSetting } from '../db';
@@ -27,6 +27,7 @@ export function DeckView({ deckId, deckName, navigate }: Props) {
   const [dailyLimit, setDailyLimit] = useState(FALLBACK_NEW_CARDS_PER_DAY);
   const [sortAlpha, setSortAlpha] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [easeMode, setEaseMode] = useState<EaseMode>('medium');
 
   // Load the saved daily limit (per-deck → global default → hardcoded fallback)
   useEffect(() => {
@@ -34,6 +35,8 @@ export function DeckView({ deckId, deckName, navigate }: Props) {
       const globalDefault = await getSetting<number>('defaultNewCardsPerDay', FALLBACK_NEW_CARDS_PER_DAY);
       const perDeck = await getSetting<number>(`newCardsPerDay:${deckId}`, globalDefault);
       setDailyLimit(perDeck);
+      const mode = await getSetting<EaseMode>(`easeMode:${deckId}`, 'medium');
+      setEaseMode(mode);
     })();
   }, [deckId]);
 
@@ -129,6 +132,30 @@ export function DeckView({ deckId, deckName, navigate }: Props) {
               >
                 +
               </button>
+            </div>
+          </div>
+          <div className="border-t border-surface-card/30 mt-4 pt-4 flex items-center justify-between">
+            <div>
+              <p className="font-medium">Interval growth</p>
+              <p className="text-sm text-text-muted">How quickly review intervals increase</p>
+            </div>
+            <div className="flex gap-1">
+              {(['shallow', 'medium', 'steep'] as EaseMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={async () => {
+                    setEaseMode(mode);
+                    await setSetting(`easeMode:${deckId}`, mode);
+                  }}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                    easeMode === mode
+                      ? 'bg-primary text-white'
+                      : 'bg-surface-card text-text-muted hover:text-text'
+                  }`}
+                >
+                  {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                </button>
+              ))}
             </div>
           </div>
           <div className="border-t border-surface-card/30 mt-4 pt-4 flex items-center justify-between">

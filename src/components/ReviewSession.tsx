@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { Card, Rating, View } from '../types';
+import type { Card, Rating, View, EaseMode } from '../types';
 import { useCards } from '../hooks/useCards';
-import { previewIntervals, reviewCard } from '../srs';
+import { previewIntervals, reviewCard, isEligibleForCompletion } from '../srs';
 import { getSetting, setSetting, logDifficultWords } from '../db';
 
 interface Props {
@@ -280,7 +280,7 @@ function getRecommendedRating(typed: string, correct: string, hardMode = false):
 // ── Component ───────────────────────────────────────────────────────
 
 export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Props) {
-  const { dueCards, loading, rateCard, editCard, removeCard } = useCards(deckId);
+  const { dueCards, loading, rateCard, editCard, removeCard, completeCard } = useCards(deckId);
   const isPreloaded = !!preloadedCards;
   const [queue, setQueue] = useState<Card[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -303,6 +303,8 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
 
   // Hard mode
   const [hardMode, setHardMode] = useState(false);
+  // Ease mode
+  const [easeMode, setEaseMode] = useState<EaseMode>('medium');
   // Settings panel & percentage toggle
   const [showStudySettings, setShowStudySettings] = useState(false);
   const [showPercentage, setShowPercentage] = useState(true);
@@ -314,6 +316,7 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
   useEffect(() => {
     getSetting<boolean>(`hardMode:${deckId}`, false).then(setHardMode);
     getSetting<boolean>('showPercentage', true).then(setShowPercentage);
+    getSetting<EaseMode>(`easeMode:${deckId}`, 'medium').then(setEaseMode);
   }, [deckId]);
 
   const toggleHardMode = async () => {
@@ -356,7 +359,7 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
     setGradeResult(isCorrect ? 'correct' : 'incorrect');
     setFlipped(true);
     // Set default custom days from the Easy preview
-    const easyMs = reviewCard(currentCard, 'easy').dueDate - Date.now();
+    const easyMs = reviewCard(currentCard, 'easy', easeMode).dueDate - Date.now();
     const days = Math.max(1, Math.round(easyMs / (24 * 60 * 60 * 1000)));
     setCustomDays(days);
   }, [answer, currentCard, flipped]);
@@ -380,7 +383,7 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
       }
     } else {
       const overrideDays = rating === 'easy' ? customDays : undefined;
-      const updated = await rateCard(currentCard, rating, overrideDays);
+      const updated = await rateCard(currentCard, rating, overrideDays, easeMode);
 
       // Log difficult words for any non-perfect answer
       if (gradeResult && gradeResult !== 'correct' && answer) {
@@ -488,6 +491,17 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
           case '2': handleRate('hard'); break;
           case '3': handleRate('good'); break;
           case '4': handleRate('easy'); break;
+          case '5': if (!isPreloaded && currentCard && isEligibleForCompletion(currentCard, easeMode)) {
+            completeCard(currentCard.id).then(() => {
+              setCompleted((c) => c + 1);
+              setReviewed((r) => r + 1);
+              setFlipped(false);
+              setAnswer('');
+              setGradeResult(null);
+              setCurrentIndex((i) => i + 1);
+              setTimeout(() => inputRef.current?.focus(), 50);
+            });
+          } break;
         }
       }
     };
@@ -819,12 +833,13 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
 
       {/* Rating buttons */}
       {flipped && !editing && (() => {
-        const intervals = previewIntervals(currentCard);
+        const intervals = previewIntervals(currentCard, easeMode);
         const recommended = getRecommendedRating(answer, currentCard.back, hardMode);
+        const canComplete = !isPreloaded && isEligibleForCompletion(currentCard, easeMode);
         return (
           <div className="mt-8 mb-4">
             <p className="text-center text-text-muted text-sm mb-3">How well did you know this?</p>
-            <div className="grid grid-cols-4 gap-2">
+            <div className={`grid ${canComplete ? 'grid-cols-5' : 'grid-cols-4'} gap-2`}>
               <RatingButton rating="again" label="Again" sublabel={intervals.again} color="primary" shortcut="1" recommended={recommended === 'again'} onClick={() => handleRate('again')} />
               <RatingButton rating="hard" label="Hard" sublabel={intervals.hard} color="primary" shortcut="2" recommended={recommended === 'hard'} onClick={() => handleRate('hard')} />
               <RatingButton rating="good" label="Good" sublabel={intervals.good} color="success" shortcut="3" recommended={recommended === 'good'} onClick={() => handleRate('good')} />
@@ -859,6 +874,25 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
                 <div className="text-[10px] opacity-70">{customDays === 1 ? 'day' : 'days'}</div>
                 <kbd className="inline-block bg-surface-card rounded px-1.5 py-0.5 text-[10px] mt-1 text-text-muted">4</kbd>
               </button>
+              {canComplete && (
+                <button
+                  onClick={async () => {
+                    await completeCard(currentCard.id);
+                    setCompleted((c) => c + 1);
+                    setReviewed((r) => r + 1);
+                    setFlipped(false);
+                    setAnswer('');
+                    setGradeResult(null);
+                    setCurrentIndex((i) => i + 1);
+                    setTimeout(() => inputRef.current?.focus(), 50);
+                  }}
+                  className="bg-alldone hover:bg-alldone/80 rounded-2xl py-2 px-2 text-center transition-colors shadow-sm text-white"
+                >
+                  <div className="font-semibold text-sm">Mastered</div>
+                  <div className="text-[10px] opacity-80 mt-1">Retire card</div>
+                  <kbd className="inline-block bg-white/20 rounded px-1.5 py-0.5 text-[10px] mt-1">5</kbd>
+                </button>
+              )}
             </div>
           </div>
         );

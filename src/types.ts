@@ -15,9 +15,11 @@ export interface Card {
   dueDate: number;       // timestamp (ms)
   createdAt: number;
   lastReviewed?: number; // timestamp of last review
+  completed?: boolean;   // permanently retired (mastered)
 }
 
 export type Rating = 'again' | 'hard' | 'good' | 'easy';
+export type EaseMode = 'shallow' | 'medium' | 'steep';
 
 export type View =
   | { type: 'dashboard' }
