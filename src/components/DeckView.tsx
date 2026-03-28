@@ -28,6 +28,7 @@ export function DeckView({ deckId, deckName, navigate }: Props) {
   const [sortAlpha, setSortAlpha] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [easeMode, setEaseMode] = useState<EaseMode>('medium');
+  const [newDayHour, setNewDayHour] = useState(0);
 
   // Load the saved daily limit (per-deck → global default → hardcoded fallback)
   useEffect(() => {
@@ -37,6 +38,8 @@ export function DeckView({ deckId, deckName, navigate }: Props) {
       setDailyLimit(perDeck);
       const mode = await getSetting<EaseMode>(`easeMode:${deckId}`, 'medium');
       setEaseMode(mode);
+      const hour = await getSetting<number>('newDayStartHour', 6);
+      setNewDayHour(hour);
     })();
   }, [deckId]);
 
@@ -157,6 +160,28 @@ export function DeckView({ deckId, deckName, navigate }: Props) {
                 </button>
               ))}
             </div>
+          </div>
+          {/* Interval preview */}
+          <div className="mt-2 flex flex-wrap gap-1.5 justify-end">
+            {(() => {
+              const easeFactors: Record<EaseMode, number> = { shallow: 1.3, medium: 1.5, steep: 2.0 };
+              const ramps: Record<EaseMode, number[]> = { shallow: [1, 2, 3, 4], medium: [1, 2, 4], steep: [1, 2, 4] };
+              const ramp = ramps[easeMode];
+              const factor = easeFactors[easeMode];
+              const intervals: number[] = [];
+              for (let i = 0; i < 10; i++) {
+                if (i < ramp.length) {
+                  intervals.push(ramp[i]);
+                } else {
+                  intervals.push(Math.round(intervals[i - 1] * factor));
+                }
+              }
+              return intervals.map((d, i) => (
+                <span key={i} className="bg-surface-light border border-primary text-primary text-xs px-2.5 py-1 rounded-full font-medium">
+                  {d < 7 ? `${d}d` : d < 30 ? `${Math.round(d / 7)}w` : `${Math.round(d / 30)}mo`}
+                </span>
+              ));
+            })()}
           </div>
           <div className="border-t border-surface-card/30 mt-4 pt-4 flex items-center justify-between">
             <div>
@@ -299,6 +324,7 @@ export function DeckView({ deckId, deckName, navigate }: Props) {
               onStartReset={() => setResetting(card.id)}
               onConfirmReset={() => { resetCard(card.id); setResetting(null); }}
               onCancelReset={() => setResetting(null)}
+              newDayHour={newDayHour}
             />
           ))}
         </div>
@@ -327,6 +353,7 @@ function CardRow({
   onStartReset,
   onConfirmReset,
   onCancelReset,
+  newDayHour,
 }: {
   card: Card;
   deleting: string | null;
@@ -346,6 +373,7 @@ function CardRow({
   onStartReset: () => void;
   onConfirmReset: () => void;
   onCancelReset: () => void;
+  newDayHour: number;
 }) {
   const isEditing = editingId === card.id;
 
@@ -459,7 +487,7 @@ function CardRow({
             ? 'bg-surface-light border border-text-muted text-text-muted'
             : 'bg-surface-light border border-primary text-primary'
         }`}>
-          {getNextReviewLabel(card)}
+          {getNextReviewLabel(card, newDayHour)}
         </span>
       </div>
     </div>

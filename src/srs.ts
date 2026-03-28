@@ -65,14 +65,20 @@ export function reviewCard(card: Card, rating: Rating, easeMode: EaseMode = 'med
   };
 }
 
-export function getNextReviewLabel(card: Card): string {
+export function getNextReviewLabel(card: Card, newDayStartHour = 0): string {
   if (card.completed) return 'Mastered';
   if (card.repetitions === 0 && card.interval === 0 && card.dueDate <= card.createdAt) return 'Not started';
   const diff = card.dueDate - Date.now();
   if (diff <= 0) return 'Now';
   if (diff < 60 * MINUTE) return `${Math.ceil(diff / MINUTE)}m`;
-  if (diff < DAY) return 'Today';
-  const days = Math.round(diff / DAY);
+  // Check if due date is before the next "new day" boundary
+  const now = new Date();
+  let nextDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), newDayStartHour, 0, 0);
+  if (now.getTime() >= nextDay.getTime()) {
+    nextDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, newDayStartHour, 0, 0);
+  }
+  if (card.dueDate < nextDay.getTime()) return 'Today';
+  const days = Math.max(1, Math.round(diff / DAY));
   if (days === 1) return '1d';
   if (days < 7) return `${days}d`;
   const weeks = Math.round(days / 7);
