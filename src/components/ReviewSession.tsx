@@ -17,8 +17,52 @@ function normalize(s: string, hardMode = false): string {
   return s.toLowerCase().replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '');
 }
 
+/**
+ * Expand alternatives in correct answer. "deg/dere" means either "deg" or "dere".
+ * Returns all possible correct answer strings.
+ * E.g. "å spare deg/dere for tid" → ["å spare deg for tid", "å spare dere for tid"]
+ */
+function expandAlternatives(correct: string): string[] {
+  // Find all word/word patterns (supports chaining like a/b/c)
+  const altPattern = /(\S+(?:\/\S+)+)/g;
+  const matches = correct.match(altPattern);
+  if (!matches) return [correct];
+
+  let results = [correct];
+  for (const match of matches) {
+    const options = match.split('/');
+    const expanded: string[] = [];
+    for (const result of results) {
+      for (const option of options) {
+        expanded.push(result.replace(match, option));
+      }
+    }
+    results = expanded;
+  }
+  return [...new Set(results)];
+}
+
+/** Find the best matching alternative (lowest edit distance) */
+function bestAlternative(typed: string, correct: string, hardMode = false): string {
+  const alts = expandAlternatives(correct);
+  if (alts.length === 1) return correct;
+  const nt = normalize(typed, hardMode);
+  let best = alts[0];
+  let bestDist = Infinity;
+  for (const alt of alts) {
+    const dist = editDistance(nt, normalize(alt, hardMode));
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = alt;
+    }
+  }
+  return best;
+}
+
 function checkAnswer(typed: string, correct: string, hardMode = false): boolean {
-  return normalize(typed, hardMode) === normalize(correct, hardMode);
+  const alts = expandAlternatives(correct);
+  const nt = normalize(typed, hardMode);
+  return alts.some((alt) => normalize(alt, hardMode) === nt);
 }
 
 // ── Grading tiers ───────────────────────────────────────────────────
@@ -41,9 +85,10 @@ function editDistance(a: string, b: string): number {
 }
 
 function getGradeTier(typed: string, correct: string, hardMode = false): GradeTier {
+  if (checkAnswer(typed, correct, hardMode)) return { label: 'Correct!', bg: 'bg-success', text: 'text-white' };
+  const best = bestAlternative(typed, correct, hardMode);
   const nt = normalize(typed, hardMode);
-  const nc = normalize(correct, hardMode);
-  if (nt === nc) return { label: 'Correct!', bg: 'bg-success', text: 'text-white' };
+  const nc = normalize(best, hardMode);
   const dist = editDistance(nt, nc);
   const maxLen = Math.max(nt.length, nc.length, 1);
   const pct = Math.round(((maxLen - dist) / maxLen) * 100);
@@ -64,8 +109,9 @@ interface DiffResult {
 }
 
 function dualDiff(typed: string, correct: string, hardMode = false): DiffResult {
+  const best = bestAlternative(typed, correct, hardMode);
   const nt = normalize(typed, hardMode);
-  const nc = normalize(correct, hardMode);
+  const nc = normalize(best, hardMode);
   const m = nt.length;
   const n = nc.length;
 
@@ -256,9 +302,10 @@ function groupHighlighted(
 // ── Accuracy percentage ──────────────────────────────────────────────
 
 function getAccuracyPercent(typed: string, correct: string, hardMode = false): number {
+  if (checkAnswer(typed, correct, hardMode)) return 100;
+  const best = bestAlternative(typed, correct, hardMode);
   const nt = normalize(typed, hardMode);
-  const nc = normalize(correct, hardMode);
-  if (nt === nc) return 100;
+  const nc = normalize(best, hardMode);
   const dist = editDistance(nt, nc);
   const maxLen = Math.max(nt.length, nc.length, 1);
   return Math.max(0, Math.round(((maxLen - dist) / maxLen) * 100));
@@ -267,9 +314,10 @@ function getAccuracyPercent(typed: string, correct: string, hardMode = false): n
 // ── Recommended rating based on accuracy ────────────────────────────
 
 function getRecommendedRating(typed: string, correct: string, hardMode = false): Rating {
+  if (checkAnswer(typed, correct, hardMode)) return 'good';
+  const best = bestAlternative(typed, correct, hardMode);
   const nt = normalize(typed, hardMode);
-  const nc = normalize(correct, hardMode);
-  if (nt === nc) return 'good';
+  const nc = normalize(best, hardMode);
   const dist = editDistance(nt, nc);
   const maxLen = Math.max(nt.length, nc.length, 1);
   const pct = Math.round(((maxLen - dist) / maxLen) * 100);
@@ -291,8 +339,11 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
   // Answer input state
   const [answer, setAnswer] = useState('');
   const [peeked, setPeeked] = useState(false);
+  const [practiceAnswer, setPracticeAnswer] = useState('');
+  const [practiceResult, setPracticeResult] = useState<'correct' | 'incorrect' | null>(null);
+  const practiceRef = useRef<HTMLTextAreaElement>(null);
   const [gradeResult, setGradeResult] = useState<'correct' | 'incorrect' | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Inline edit state
   const [editing, setEditing] = useState(false);
@@ -370,12 +421,17 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
     setPeeked(true);
     setFlipped(true);
     setGradeResult(null);
+    setPracticeAnswer('');
+    setPracticeResult(null);
+    setTimeout(() => practiceRef.current?.focus(), 50);
   }, [flipped]);
 
   const handleReflip = useCallback(() => {
     setFlipped(false);
     setPeeked(false);
     setAnswer('');
+    setPracticeAnswer('');
+    setPracticeResult(null);
     setGradeResult(null);
     setTimeout(() => inputRef.current?.focus(), 50);
   }, []);
@@ -398,7 +454,8 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
       if (gradeResult && gradeResult !== 'correct' && answer) {
         try {
           const diff = dualDiff(answer, currentCard.back, hardMode);
-          const highlighted = highlightCorrectAnswer(currentCard.back, diff.correctErrors, hardMode);
+          const bestAltForLog = bestAlternative(answer, currentCard.back, hardMode);
+          const highlighted = highlightCorrectAnswer(bestAltForLog, diff.correctErrors, hardMode);
           const missedWords = extractHighlightedWords(highlighted);
           if (missedWords.length > 0) {
             const now = Date.now();
@@ -476,16 +533,11 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLTextAreaElement) return;
+      // Allow edit textareas to work normally, but not our answer/practice textareas
+      if (e.target instanceof HTMLTextAreaElement && e.target !== inputRef.current && e.target !== practiceRef.current) return;
       if (editing) return; // Don't intercept while editing
 
-      if (!flipped && e.key === 'Enter' && e.target === inputRef.current) {
-        e.preventDefault();
-        handleReveal();
-        return;
-      }
-
-      if (flipped && !(e.target instanceof HTMLInputElement)) {
+      if (flipped && !peeked && !(e.target instanceof HTMLInputElement) && e.target !== practiceRef.current) {
         if (e.key === 'ArrowLeft') {
           e.preventDefault();
           handleReflip();
@@ -681,15 +733,95 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
               <div className="card-face card-back bg-surface-light rounded-2xl p-8 min-h-[200px] flex flex-col items-center justify-center absolute inset-0 w-full overflow-visible shadow-md">
                 {/* Question at top of revealed card */}
                 <p className="text-sm text-text-muted text-center mb-4 pb-3 border-b border-surface-card w-full">{currentCard.front}</p>
-                {/* Peek mode — just show the answer, no grade */}
-                {peeked && !gradeResult && (
-                  <p className="text-xl text-center leading-relaxed whitespace-pre-wrap">{currentCard.back}</p>
-                )}
+                {/* Peek mode — show answer + practice input */}
+                {peeked && !gradeResult && (() => {
+                  const practiceBest = bestAlternative(practiceAnswer, currentCard.back, hardMode);
+                  const practiceDiff = practiceResult && practiceResult !== 'correct'
+                    ? dualDiff(practiceAnswer, currentCard.back, hardMode) : null;
+                  const practiceHighlighted = practiceDiff
+                    ? highlightCorrectAnswer(practiceBest, practiceDiff.correctErrors, hardMode) : null;
+                  const practiceTier = practiceResult
+                    ? getGradeTier(practiceAnswer, currentCard.back, hardMode) : null;
+                  const practiceExact = practiceResult === 'correct';
+
+                  return (
+                    <div className="w-full flex flex-col items-center gap-3">
+                      {/* Show correct answer — highlighted if practice was wrong */}
+                      {practiceResult && !practiceExact && practiceHighlighted ? (
+                        <p className="text-xl text-center leading-relaxed whitespace-pre-wrap">
+                          {groupHighlighted(practiceHighlighted).map((g, i) => (
+                            g.highlight ? (
+                              <span key={i} className="bg-surface-light border border-primary text-primary rounded px-1 py-0.5 mx-[1px]">{g.text}</span>
+                            ) : (<span key={i}>{g.text}</span>)
+                          ))}
+                        </p>
+                      ) : practiceExact ? (
+                        <p className="text-xl text-center leading-relaxed whitespace-pre-wrap text-success">{practiceAnswer}</p>
+                      ) : (
+                        <p className="text-xl text-center leading-relaxed whitespace-pre-wrap">{currentCard.back}</p>
+                      )}
+
+                      {/* Practice diff of typed answer */}
+                      {practiceDiff && (() => {
+                        const groups: { text: string; color: CharColor }[] = [];
+                        for (const c of practiceDiff.typedChars) {
+                          const last = groups[groups.length - 1];
+                          if (last && last.color === c.color) { last.text += c.char; }
+                          else { groups.push({ text: c.char, color: c.color }); }
+                        }
+                        return (
+                          <p className="text-xl text-center leading-relaxed whitespace-pre-wrap">
+                            {groups.map((g, i) => (
+                              <span key={i} className={
+                                g.color === 'correct' ? 'text-success'
+                                : 'bg-primary text-white rounded px-1 py-0.5 mx-[1px]'
+                              }>{g.text}</span>
+                            ))}
+                          </p>
+                        );
+                      })()}
+
+                      {/* Practice grade label */}
+                      {practiceTier && (
+                        <div className={`px-6 py-3 rounded-full text-xl font-bold ${practiceTier.bg} ${practiceTier.text}`}>
+                          {practiceTier.label}
+                        </div>
+                      )}
+
+                      {/* Practice input */}
+                      <textarea
+                        ref={practiceRef}
+                        placeholder="Practice typing the answer..."
+                        value={practiceAnswer}
+                        onChange={(e) => { setPracticeAnswer(e.target.value); setPracticeResult(null); e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            const isCorrect = checkAnswer(practiceAnswer, currentCard.back, hardMode);
+                            setPracticeResult(isCorrect ? 'correct' : 'incorrect');
+                          }
+                        }}
+                        rows={1}
+                        className="w-full bg-surface-card rounded-xl px-4 py-3 text-text text-center text-lg outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-text-muted/50 resize-none overflow-hidden"
+                      />
+                      <button
+                        onClick={() => {
+                          const isCorrect = checkAnswer(practiceAnswer, currentCard.back, hardMode);
+                          setPracticeResult(isCorrect ? 'correct' : 'incorrect');
+                        }}
+                        className="bg-surface-light border border-primary text-primary px-5 py-2 rounded-full text-sm font-medium transition-colors shadow-sm hover:bg-primary/10"
+                      >
+                        Test submit
+                      </button>
+                    </div>
+                  );
+                })()}
                 {gradeResult && (() => {
                   const tier = getGradeTier(answer, currentCard.back, hardMode);
                   const isExact = gradeResult === 'correct';
+                  const bestAlt = bestAlternative(answer, currentCard.back, hardMode);
                   const diff = !isExact ? dualDiff(answer, currentCard.back, hardMode) : null;
-                  const highlighted = diff ? highlightCorrectAnswer(currentCard.back, diff.correctErrors, hardMode) : null;
+                  const highlighted = diff ? highlightCorrectAnswer(bestAlt, diff.correctErrors, hardMode) : null;
 
                   return (
                     <>
@@ -823,17 +955,23 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
         {/* Answer input */}
         {!flipped && !editing && (
           <div className="w-full max-w-lg">
-            <input
+            <textarea
               ref={inputRef}
-              type="text"
               placeholder="Type your answer..."
               value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
+              onChange={(e) => { setAnswer(e.target.value); e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleReveal();
+                }
+              }}
+              rows={1}
               autoComplete="off"
               autoCorrect="off"
               autoCapitalize="off"
               spellCheck={false}
-              className="w-full bg-surface-light rounded-2xl px-5 py-3.5 text-text text-center text-lg outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-text-muted/50 shadow-sm"
+              className="w-full bg-surface-light rounded-2xl px-5 py-3.5 text-text text-center text-lg outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-text-muted/50 shadow-sm resize-none overflow-hidden"
             />
             <div className="flex justify-center gap-2 mt-3">
               <button
