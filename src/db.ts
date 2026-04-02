@@ -170,7 +170,16 @@ export interface StreakData {
 }
 
 export async function getStreak(): Promise<StreakData> {
-  return getSetting<StreakData>('streak', { count: 0, lastDate: '' });
+  const streak = await getSetting<StreakData>('streak', { count: 0, lastDate: '' });
+  // Auto-reset streak if last activity was more than 1 day ago
+  const today = todayString();
+  const yesterday = yesterdayString();
+  if (streak.count > 0 && streak.lastDate !== today && streak.lastDate !== yesterday) {
+    const reset = { count: 0, lastDate: '' };
+    await setSetting('streak', reset);
+    return reset;
+  }
+  return streak;
 }
 
 /** Increment the count of cards reviewed today and check if streak goal is met. */
