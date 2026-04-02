@@ -325,6 +325,7 @@ export function DeckView({ deckId, deckName, navigate }: Props) {
               onConfirmReset={() => { resetCard(card.id); setResetting(null); }}
               onCancelReset={() => setResetting(null)}
               newDayHour={newDayHour}
+              onLearn={() => navigate({ type: 'learn', deckId, cardId: card.id })}
             />
           ))}
         </div>
@@ -354,6 +355,7 @@ function CardRow({
   onConfirmReset,
   onCancelReset,
   newDayHour,
+  onLearn,
 }: {
   card: Card;
   deleting: string | null;
@@ -374,6 +376,7 @@ function CardRow({
   onConfirmReset: () => void;
   onCancelReset: () => void;
   newDayHour: number;
+  onLearn: () => void;
 }) {
   const isEditing = editingId === card.id;
 
@@ -425,6 +428,13 @@ function CardRow({
       </div>
       <div className="flex items-center gap-2 ml-4">
         <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-all">
+        <button
+          onClick={onLearn}
+          className="text-text-muted hover:text-primary p-1 transition-all"
+          title="Learn this card"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        </button>
         <button
           onClick={onStartEdit}
           className="text-text-muted hover:text-primary p-1 transition-all"

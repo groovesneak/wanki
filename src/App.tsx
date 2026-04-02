@@ -4,6 +4,7 @@ import { Dashboard } from './components/Dashboard';
 import { DeckView } from './components/DeckView';
 import { ReviewSession } from './components/ReviewSession';
 import { DifficultWords } from './components/DifficultWords';
+import { LearnMode } from './components/LearnMode';
 import * as db from './db';
 
 function App() {
@@ -11,7 +12,7 @@ function App() {
   const [currentDeck, setCurrentDeck] = useState<Deck | null>(null);
 
   useEffect(() => {
-    if (view.type === 'deck' || view.type === 'review') {
+    if (view.type === 'deck' || view.type === 'review' || view.type === 'learn') {
       db.getAllDecks().then((decks) => {
         const deck = decks.find((d) => d.id === view.deckId);
         setCurrentDeck(deck ?? null);
@@ -35,6 +36,14 @@ function App() {
         <ReviewSession
           deckId={view.deckId}
           deckName={currentDeck?.name ?? 'Deck'}
+          navigate={setView}
+        />
+      );
+    case 'learn':
+      return (
+        <LearnMode
+          deckId={view.deckId}
+          cardId={view.cardId}
           navigate={setView}
         />
       );

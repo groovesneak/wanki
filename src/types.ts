@@ -27,4 +27,5 @@ export type View =
   | { type: 'review'; deckId: string }
   | { type: 'editCard'; deckId: string; cardId?: string }
   | { type: 'difficultWords' }
-  | { type: 'difficultWordsReview'; mode: 'words' | 'cards'; cards: Card[] };
+  | { type: 'difficultWordsReview'; mode: 'words' | 'cards'; cards: Card[] }
+  | { type: 'learn'; deckId: string; cardId: string };
