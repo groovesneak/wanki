@@ -11,20 +11,37 @@ export interface ParsedCSV {
 
 function detectSeparator(text: string): string {
   // Check first few non-empty lines to determine separator
-  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '').slice(0, 5);
-  let totalSemicolons = 0;
-  let totalTabs = 0;
-  let totalCommas = 0;
+  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '').slice(0, 10);
 
-  for (const line of lines) {
-    totalSemicolons += (line.match(/;/g) || []).length;
-    totalTabs += (line.match(/\t/g) || []).length;
-    totalCommas += (line.match(/,/g) || []).length;
+  // For each candidate separator, check consistency of column count across lines.
+  // A real separator produces a consistent number of columns.
+  // Commas in natural language text produce inconsistent splits.
+  const candidates = [';', '\t', ','] as const;
+
+  let bestSep = ',';
+  let bestScore = -1;
+
+  for (const sep of candidates) {
+    const counts = lines.map((line) => (line.match(new RegExp(sep === '\t' ? '\t' : sep.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length);
+    if (counts.every((c) => c === 0)) continue;
+
+    // Score = how consistent the count is across lines (lower variance = better)
+    // If every line has the same number of separators, it's likely the real separator
+    const mode = counts.sort((a, b) => a - b)[Math.floor(counts.length / 2)];
+    const consistent = counts.filter((c) => c === mode).length;
+
+    // Prefer separators where most lines have the same count
+    // Tie-break: prefer semicolons and tabs over commas (commas are common in text)
+    const priority = sep === ';' ? 2 : sep === '\t' ? 1 : 0;
+    const score = consistent * 10 + priority;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestSep = sep;
+    }
   }
 
-  if (totalSemicolons >= totalTabs && totalSemicolons >= totalCommas && totalSemicolons > 0) return ';';
-  if (totalTabs >= totalCommas && totalTabs > 0) return '\t';
-  return ',';
+  return bestSep;
 }
 
 function splitRow(line: string, sep: string): string[] {
