@@ -290,6 +290,7 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
 
   // Answer input state
   const [answer, setAnswer] = useState('');
+  const [peeked, setPeeked] = useState(false);
   const [gradeResult, setGradeResult] = useState<'correct' | 'incorrect' | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -364,8 +365,16 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
     setCustomDays(days);
   }, [answer, currentCard, flipped]);
 
+  const handlePeek = useCallback(() => {
+    if (flipped) return;
+    setPeeked(true);
+    setFlipped(true);
+    setGradeResult(null);
+  }, [flipped]);
+
   const handleReflip = useCallback(() => {
     setFlipped(false);
+    setPeeked(false);
     setAnswer('');
     setGradeResult(null);
     setTimeout(() => inputRef.current?.focus(), 50);
@@ -423,6 +432,7 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
     setReviewed((r) => r + 1);
     setFlipped(false);
     setAnswer('');
+    setPeeked(false);
     setGradeResult(null);
     setEditing(false);
     setConfirmDelete(false);
@@ -448,6 +458,7 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
     setQueue((q) => q.filter((_, idx) => idx !== currentIndex));
     setFlipped(false);
     setAnswer('');
+    setPeeked(false);
     setGradeResult(null);
     setConfirmDelete(false);
     setEditing(false);
@@ -497,6 +508,7 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
               setReviewed((r) => r + 1);
               setFlipped(false);
               setAnswer('');
+              setPeeked(false);
               setGradeResult(null);
               setCurrentIndex((i) => i + 1);
               setTimeout(() => inputRef.current?.focus(), 50);
@@ -669,6 +681,10 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
               <div className="card-face card-back bg-surface-light rounded-2xl p-8 min-h-[200px] flex flex-col items-center justify-center absolute inset-0 w-full overflow-visible shadow-md">
                 {/* Question at top of revealed card */}
                 <p className="text-sm text-text-muted text-center mb-4 pb-3 border-b border-surface-card w-full">{currentCard.front}</p>
+                {/* Peek mode — just show the answer, no grade */}
+                {peeked && !gradeResult && (
+                  <p className="text-xl text-center leading-relaxed whitespace-pre-wrap">{currentCard.back}</p>
+                )}
                 {gradeResult && (() => {
                   const tier = getGradeTier(answer, currentCard.back, hardMode);
                   const isExact = gradeResult === 'correct';
@@ -786,8 +802,8 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
           </div>
         )}
 
-        {/* Accuracy bar */}
-        {flipped && !editing && showPercentage && (() => {
+        {/* Accuracy bar — hidden when peeking */}
+        {flipped && !editing && !peeked && showPercentage && (() => {
           const pct = getAccuracyPercent(answer, currentCard.back, hardMode);
           const barColor = pct === 100 ? 'bg-success' : pct >= 70 ? 'bg-white border-2 border-primary' : 'bg-primary';
           const textColor = pct === 100 ? 'text-success' : 'text-primary';
@@ -819,7 +835,13 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
               spellCheck={false}
               className="w-full bg-surface-light rounded-2xl px-5 py-3.5 text-text text-center text-lg outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-text-muted/50 shadow-sm"
             />
-            <div className="flex justify-center mt-3">
+            <div className="flex justify-center gap-2 mt-3">
+              <button
+                onClick={handlePeek}
+                className="bg-surface-light border border-primary text-primary px-5 py-2 rounded-full text-sm font-medium transition-colors shadow-sm hover:bg-primary/10"
+              >
+                Reveal
+              </button>
               <button
                 onClick={handleReveal}
                 className="bg-primary hover:bg-primary-hover text-white px-5 py-2 rounded-full text-sm font-medium transition-colors shadow-sm"
@@ -831,8 +853,8 @@ export function ReviewSession({ deckId, deckName, navigate, preloadedCards }: Pr
         )}
       </div>
 
-      {/* Rating buttons */}
-      {flipped && !editing && (() => {
+      {/* Rating buttons — hidden when peeking */}
+      {flipped && !editing && !peeked && (() => {
         const intervals = previewIntervals(currentCard, easeMode);
         const recommended = getRecommendedRating(answer, currentCard.back, hardMode);
         const canComplete = !isPreloaded && isEligibleForCompletion(currentCard, easeMode);

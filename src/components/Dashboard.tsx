@@ -12,7 +12,7 @@ interface Props {
 }
 
 export function Dashboard({ navigate }: Props) {
-  const { decks, loading, createDeck, removeDeck, refresh } = useDecks();
+  const { decks, loading, createDeck, renameDeck, removeDeck, refresh } = useDecks();
   const [newDeckName, setNewDeckName] = useState('');
   const [showInput, setShowInput] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -296,6 +296,7 @@ export function Dashboard({ navigate }: Props) {
               onOpen={() => navigate({ type: 'deck', deckId: deck.id })}
               onStudy={() => navigate({ type: 'review', deckId: deck.id })}
               onDelete={() => removeDeck(deck.id)}
+              onRename={(name) => renameDeck(deck.id, name)}
               onDoneChange={(done) => handleDeckDone(deck.id, done)}
             />
           ))}
@@ -329,6 +330,7 @@ function DeckCard({
   onOpen,
   onStudy,
   onDelete,
+  onRename,
   onDoneChange,
 }: {
   deck: Deck;
@@ -336,11 +338,14 @@ function DeckCard({
   onOpen: () => void;
   onStudy: () => void;
   onDelete: () => void;
+  onRename: (name: string) => void;
   onDoneChange: (done: boolean) => void;
 }) {
   const [confirming, setConfirming] = useState(false);
   const [hardMode, setHardMode] = useState(false);
   const [isDone, setIsDone] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameVal, setRenameVal] = useState(deck.name);
 
   useEffect(() => {
     getSetting<boolean>(`hardMode:${deck.id}`, false).then(setHardMode);
@@ -356,8 +361,34 @@ function DeckCard({
   return (
     <div className={`bg-surface-light rounded-2xl p-5 hover:bg-surface-card/60 transition-colors group shadow-sm ${isDone ? (allDone ? 'border-2 border-alldone' : 'border-2 border-success') : ''}`}>
       <div className="flex items-center justify-between">
-        <button onClick={onOpen} className="flex-1 text-left">
-          <h3 className="text-lg font-semibold">{deck.name}</h3>
+        <button onClick={renaming ? undefined : onOpen} className="flex-1 text-left">
+          {renaming ? (
+            <input
+              autoFocus
+              type="text"
+              value={renameVal}
+              onChange={(e) => setRenameVal(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const name = renameVal.trim();
+                  if (name) onRename(name);
+                  setRenaming(false);
+                } else if (e.key === 'Escape') {
+                  setRenameVal(deck.name);
+                  setRenaming(false);
+                }
+              }}
+              onBlur={() => {
+                const name = renameVal.trim();
+                if (name && name !== deck.name) onRename(name);
+                setRenaming(false);
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="text-lg font-semibold bg-surface-card rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-primary/50 w-full"
+            />
+          ) : (
+            <h3 className="text-lg font-semibold">{deck.name}</h3>
+          )}
           <DeckStats deckId={deck.id} onDoneChange={(done) => { setIsDone(done); onDoneChange(done); }} />
         </button>
         <div className="flex items-center gap-2 ml-4">
@@ -394,13 +425,22 @@ function DeckCard({
               </button>
             </div>
           ) : (
-            <button
-              onClick={() => setConfirming(true)}
-              className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-danger p-2 transition-all"
-              title="Delete deck"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-            </button>
+            <div className="flex gap-0.5">
+              <button
+                onClick={() => { setRenameVal(deck.name); setRenaming(true); }}
+                className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-primary p-2 transition-all"
+                title="Rename deck"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+              </button>
+              <button
+                onClick={() => setConfirming(true)}
+                className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-danger p-2 transition-all"
+                title="Delete deck"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+              </button>
+            </div>
           )}
         </div>
       </div>
