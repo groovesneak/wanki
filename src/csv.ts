@@ -39,7 +39,14 @@ function splitRow(line: string, sep: string): string[] {
         current += '"';
         i++;
       } else if (ch === '"') {
-        inQuotes = false;
+        // Check if this quote is followed by separator or end of line
+        // If so, it's the closing quote. Otherwise treat as literal.
+        const next = line[i + 1];
+        if (next === undefined || next === sep || next === '\r' || next === '\n') {
+          inQuotes = false;
+        } else {
+          current += ch;
+        }
       } else {
         current += ch;
       }
