@@ -3,7 +3,7 @@ import type { Deck, View } from '../types';
 import { useDecks } from '../hooks/useDecks';
 import { DeckStats } from './DeckStats';
 import { ImportCSV } from './ImportCSV';
-import { getStreak, getSetting, setSetting, getDifficultWords, addDeck, addCardsBatch, type StreakData } from '../db';
+import { getStreak, getSetting, setSetting, getDifficultWords, addDeck, addCardsBatch, getAllDecks, getCardsByDeck, getDueCards, getReviewedToday, type StreakData } from '../db';
 import { parseApkg } from '../apkg';
 import { createNewCard } from '../srs';
 
@@ -27,6 +27,77 @@ export function Dashboard({ navigate }: Props) {
   const [showImportMenu, setShowImportMenu] = useState(false);
   const [deckDoneMap, setDeckDoneMap] = useState<Record<string, boolean>>({});
   const apkgInputRef = useRef<HTMLInputElement>(null);
+  const [githubToken, setGithubToken] = useState(() => localStorage.getItem('wanki_github_token') ?? '');
+  const [gistId, setGistId] = useState(() => localStorage.getItem('wanki_gist_id') ?? '');
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'done' | 'error'>('idle');
+
+  const syncToGist = useCallback(async (token: string, currentGistId: string) => {
+    if (!token) return;
+    setSyncStatus('syncing');
+    try {
+      const [allDecks, streakData, reviewedToday, dailyGoal, defaultNewPerDay] = await Promise.all([
+        getAllDecks(),
+        getStreak(),
+        getReviewedToday(),
+        getSetting<number>('dailyGoal', 10),
+        getSetting<number>('defaultNewCardsPerDay', 30),
+      ]);
+      const now = Date.now();
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+      const todayMs = todayStart.getTime();
+      const DAY = 86_400_000;
+      const deckStats = await Promise.all(allDecks.map(async (deck) => {
+        const [cards, dueCards, limit] = await Promise.all([
+          getCardsByDeck(deck.id),
+          getDueCards(deck.id),
+          getSetting<number>(`newCardsPerDay:${deck.id}`, defaultNewPerDay),
+        ]);
+        const completedToday = cards.filter(c =>
+          c.lastReviewed != null && c.lastReviewed >= todayMs && c.dueDate > now && (c.dueDate - now) >= DAY * 0.5
+        ).length;
+        const remaining = Math.max(0, limit - completedToday);
+        const reviewCount = dueCards.filter(c => c.interval > 0).length;
+        const newCount = dueCards.filter(c => c.interval === 0).length;
+        const newSlots = Math.max(0, remaining - reviewCount);
+        return { id: deck.id, name: deck.name, totalCards: cards.length, dueToday: reviewCount + Math.min(newCount, newSlots), completedToday };
+      }));
+      const stats = {
+        streak: streakData, reviewedToday, dailyGoal,
+        decks: deckStats,
+        totalDueToday: deckStats.reduce((s, d) => s + d.dueToday, 0),
+        totalCards: deckStats.reduce((s, d) => s + d.totalCards, 0),
+        updatedAt: new Date().toISOString(),
+      };
+      const gistBody = {
+        description: 'Wanki stats',
+        public: true,
+        files: { 'wanki-stats.json': { content: JSON.stringify(stats, null, 2) } },
+      };
+      let id = currentGistId;
+      if (!id) {
+        const res = await fetch('https://api.github.com/gists', {
+          method: 'POST',
+          headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(gistBody),
+        });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        id = data.id;
+        localStorage.setItem('wanki_gist_id', id);
+        setGistId(id);
+      } else {
+        const res = await fetch(`https://api.github.com/gists/${id}`, {
+          method: 'PATCH',
+          headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(gistBody),
+        });
+        if (!res.ok) throw new Error();
+      }
+      setSyncStatus('done');
+    } catch {
+      setSyncStatus('error');
+    }
+  }, []);
 
   const allDone = decks.length > 0 && decks.every((d) => deckDoneMap[d.id]);
 
@@ -40,7 +111,10 @@ export function Dashboard({ navigate }: Props) {
     getSetting<number>('dailyGoal', 10).then(setDailyGoal);
     getSetting<number>('defaultNewCardsPerDay', 30).then(setDefaultCardLimit);
     getDifficultWords().then((dw) => setDifficultWordCount(dw.filter((w) => w.count >= 3).length));
-  }, []);
+    const token = localStorage.getItem('wanki_github_token') ?? '';
+    const id = localStorage.getItem('wanki_gist_id') ?? '';
+    if (token) syncToGist(token, id);
+  }, [syncToGist]);
 
   const handleCreate = async () => {
     const name = newDeckName.trim();
@@ -217,7 +291,41 @@ export function Dashboard({ navigate }: Props) {
               </button>
             </div>
           </div>
-          <div className="flex items-center justify-between">
+          <div className="mt-3 pt-3 border-t border-surface-card">
+            <label className="text-sm font-medium block mb-1.5">Groove-box sync</label>
+            <input
+              type="password"
+              placeholder="GitHub token (gist scope)…"
+              value={githubToken}
+              onChange={(e) => {
+                const val = e.target.value;
+                setGithubToken(val);
+                localStorage.setItem('wanki_github_token', val);
+              }}
+              className="w-full bg-surface-card rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/50 font-mono mb-1.5"
+            />
+            {githubToken && !gistId && (
+              <button
+                onClick={() => syncToGist(githubToken, '')}
+                disabled={syncStatus === 'syncing'}
+                className="text-xs text-primary hover:underline disabled:opacity-50"
+              >
+                {syncStatus === 'syncing' ? 'Creating…' : 'Create Gist'}
+              </button>
+            )}
+            {gistId && (
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-text-muted">Gist ID:</p>
+                <code className="flex-1 text-xs bg-surface-card rounded px-2 py-0.5 truncate text-primary">{gistId}</code>
+                <button onClick={() => navigator.clipboard.writeText(gistId)} className="text-xs text-primary hover:underline flex-shrink-0">Copy</button>
+              </div>
+            )}
+            {syncStatus === 'syncing' && <p className="text-xs text-text-muted mt-1">Syncing…</p>}
+            {syncStatus === 'done' && <p className="text-xs text-success mt-1">✓ Synced</p>}
+            {syncStatus === 'error' && <p className="text-xs text-danger mt-1">Sync failed — check token</p>}
+          </div>
+
+          <div className="flex items-center justify-between mt-3">
             <label className="text-sm font-medium">New day starts at</label>
             <select
               value={newDayHour}
