@@ -15,6 +15,9 @@ function App() {
     async function handleStatsRequest(event: MessageEvent) {
       if (event.data?.type !== 'WANKI_GET_STATS') return;
       try {
+        if (window.self !== window.top && document.requestStorageAccess) {
+          await (document.requestStorageAccess as (options?: { all?: boolean }) => Promise<void>)({ all: true });
+        }
         const [decks, streak, reviewedToday, dailyGoal, defaultNewPerDay] = await Promise.all([
           db.getAllDecks(),
           db.getStreak(),
