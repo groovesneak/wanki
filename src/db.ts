@@ -237,6 +237,27 @@ export async function getReviewedToday(): Promise<number> {
   return getSetting<number>(`reviewedToday:${todayString()}`, 0);
 }
 
+/** Get reviewed-per-day counts for the last `days` days, oldest first.
+ *  Returns a dense array (zeros for missing days). */
+export async function getReviewHistory(days: number): Promise<{ date: string; reviewed: number }[]> {
+  const db = await getDb();
+  const all = await db.getAll('settings');
+  const map = new Map<string, number>();
+  const PREFIX = 'reviewedToday:';
+  for (const row of all) {
+    const key = row.key as string;
+    if (key.startsWith(PREFIX)) map.set(key.slice(PREFIX.length), row.value as number);
+  }
+  const out: { date: string; reviewed: number }[] = [];
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today); d.setDate(today.getDate() - i);
+    const date = d.toISOString().slice(0, 10);
+    out.push({ date, reviewed: map.get(date) ?? 0 });
+  }
+  return out;
+}
+
 /** Clear all new-card log entries for a specific card (used when resetting SRS) */
 export async function clearNewCardLog(cardId: string): Promise<void> {
   const db = await getDb();
