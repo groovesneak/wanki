@@ -3,7 +3,7 @@ import type { Deck, View } from '../types';
 import { useDecks } from '../hooks/useDecks';
 import { DeckStats } from './DeckStats';
 import { ImportCSV } from './ImportCSV';
-import { getStreak, getSetting, setSetting, getDifficultWords, addDeck, addCardsBatch, getAllDecks, getCardsByDeck, getDueCards, getReviewedToday, type StreakData } from '../db';
+import { getStreak, getSetting, setSetting, getDifficultWords, addDeck, addCardsBatch, getAllDecks, getCardsByDeck, getDueCards, getReviewedToday, getReviewHistory, type StreakData } from '../db';
 import { parseApkg } from '../apkg';
 import { createNewCard } from '../srs';
 
@@ -35,12 +35,13 @@ export function Dashboard({ navigate }: Props) {
     if (!token) return;
     setSyncStatus('syncing');
     try {
-      const [allDecks, streakData, reviewedToday, dailyGoal, defaultNewPerDay] = await Promise.all([
+      const [allDecks, streakData, reviewedToday, dailyGoal, defaultNewPerDay, history] = await Promise.all([
         getAllDecks(),
         getStreak(),
         getReviewedToday(),
         getSetting<number>('dailyGoal', 10),
         getSetting<number>('defaultNewCardsPerDay', 30),
+        getReviewHistory(365),
       ]);
       const now = Date.now();
       const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
@@ -66,6 +67,7 @@ export function Dashboard({ navigate }: Props) {
         decks: deckStats,
         totalDueToday: deckStats.reduce((s, d) => s + d.dueToday, 0),
         totalCards: deckStats.reduce((s, d) => s + d.totalCards, 0),
+        history,
         updatedAt: new Date().toISOString(),
       };
       const gistBody = {
